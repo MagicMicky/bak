@@ -1,0 +1,46 @@
+.PHONY: build install clean test fmt vet lint staticcheck check
+
+BINARY_NAME=bak
+INSTALL_PATH=/usr/local/bin
+VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS=-ldflags "-X main.version=$(VERSION)"
+
+build:
+	go build $(LDFLAGS) -o $(BINARY_NAME) ./cmd/bak
+
+install: build
+	install -m 755 $(BINARY_NAME) $(INSTALL_PATH)/$(BINARY_NAME)
+
+uninstall:
+	rm -f $(INSTALL_PATH)/$(BINARY_NAME)
+
+clean:
+	rm -f $(BINARY_NAME)
+	go clean
+
+test:
+	go test -v -race ./...
+
+test-cover:
+	go test -v -race -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+
+fmt:
+	go fmt ./...
+
+fmt-check:
+	@test -z "$$(gofmt -s -l .)" || (echo "Run 'make fmt' to format code" && gofmt -s -d . && exit 1)
+
+vet:
+	go vet ./...
+
+staticcheck:
+	@which staticcheck > /dev/null || go install honnef.co/go/tools/cmd/staticcheck@latest
+	staticcheck ./...
+
+lint: fmt vet staticcheck
+
+check: fmt-check vet staticcheck test build
+	@echo "All checks passed"
+
+.DEFAULT_GOAL := build
