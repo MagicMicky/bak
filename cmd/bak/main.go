@@ -887,5 +887,12 @@ func validateCredentials(repo, password string) error {
 		"RESTIC_REPOSITORY="+repo,
 		"RESTIC_PASSWORD="+password,
 	)
-	return cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if len(output) > 0 {
+			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
+		}
+		return err
+	}
+	return nil
 }
