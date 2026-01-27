@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/magicmicky/bak/internal/backup"
+	"github.com/magicmicky/bak/internal/config"
+	"github.com/magicmicky/bak/internal/systemd"
 	"github.com/spf13/cobra"
 )
 
@@ -175,60 +180,309 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, w)
 	}
 
-	fmt.Printf("Setting up backup with tag: %s\n", setupTag)
-	fmt.Printf("Paths: %v\n", paths)
-	fmt.Printf("Schedule: %s\n", setupSchedule)
-	fmt.Printf("Retention: hourly=%d, daily=%d, weekly=%d, monthly=%d, yearly=%d\n",
-		setupKeepHourly, setupKeepDaily, setupKeepWeekly, setupKeepMonthly, setupKeepYearly)
+	// Check if config already exists
+	if config.Exists(config.DefaultConfigPath) && !setupForce {
+		return fmt.Errorf("configuration already exists at %s. Use --force to overwrite", config.DefaultConfigPath)
+	}
 
-	// TODO: Implement actual setup logic
-	// - Check if config exists (require --force to overwrite)
-	// - Create /etc/backup/backup.conf
-	// - Create systemd service and timer
-	// - Enable and start timer
+	// Create config directory
+	configDir := filepath.Dir(config.DefaultConfigPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
 
-	fmt.Println("\nSetup complete! (stub implementation)")
+	// Build configuration
+	cfg := &config.Config{
+		Tag:         setupTag,
+		Paths:       paths,
+		Excludes:    setupExcludes,
+		KeepHourly:  setupKeepHourly,
+		KeepDaily:   setupKeepDaily,
+		KeepWeekly:  setupKeepWeekly,
+		KeepMonthly: setupKeepMonthly,
+		KeepYearly:  setupKeepYearly,
+		NotifyURL:   setupNotify,
+		Schedule:    setupSchedule,
+	}
+
+	// Save configuration
+	if err := cfg.Save(config.DefaultConfigPath); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Printf("Configuration saved to %s\n", config.DefaultConfigPath)
+
+	// Install systemd timer
+	if err := systemd.Install(cfg.Schedule); err != nil {
+		return fmt.Errorf("failed to install systemd timer: %w", err)
+	}
+
+	// Get next run time
+	nextRun, err := systemd.NextRun()
+	if err != nil {
+		nextRun = "(unknown)"
+	}
+
+	fmt.Println("\nSetup complete!")
+	fmt.Printf("  Tag:      %s\n", cfg.Tag)
+	fmt.Printf("  Paths:    %s\n", strings.Join(cfg.Paths, ", "))
+	fmt.Printf("  Schedule: %s\n", cfg.Schedule)
+	fmt.Printf("  Retention: hourly=%d, daily=%d, weekly=%d, monthly=%d, yearly=%d\n",
+		cfg.KeepHourly, cfg.KeepDaily, cfg.KeepWeekly, cfg.KeepMonthly, cfg.KeepYearly)
+	fmt.Printf("  Next run: %s\n", strings.TrimSpace(nextRun))
+	fmt.Printf("\nNote: Ensure %s contains RESTIC_REPOSITORY and RESTIC_PASSWORD\n", config.DefaultEnvPath)
+
 	return nil
 }
 
 func runEdit(cmd *cobra.Command, args []string) error {
-	// TODO: Implement edit logic
-	// - Load existing config
-	// - Apply changes
-	// - Show diff
-	// - Require confirmation
-	// - Update config and restart timer
+	// Check if configured
+	if !config.Exists(config.DefaultConfigPath) {
+		return fmt.Errorf("not configured. Run 'bak setup' first")
+	}
 
-	fmt.Println("Edit command not yet implemented")
+	// Load existing config
+	cfg, err := config.Load(config.DefaultConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Track changes
+	var changes []string
+	oldSchedule := cfg.Schedule
+
+	// Apply changes based on flags that were explicitly set
+	if cmd.Flags().Changed("paths") {
+		paths, warnings := parsePaths(editPaths)
+		if len(paths) == 0 {
+			return fmt.Errorf("at least one valid path is required")
+		}
+		for _, w := range warnings {
+			fmt.Fprintln(os.Stderr, w)
+		}
+		changes = append(changes, fmt.Sprintf("  paths: %s -> %s", strings.Join(cfg.Paths, ","), strings.Join(paths, ",")))
+		cfg.Paths = paths
+	}
+
+	if cmd.Flags().Changed("schedule") {
+		changes = append(changes, fmt.Sprintf("  schedule: %s -> %s", cfg.Schedule, editSchedule))
+		cfg.Schedule = editSchedule
+	}
+
+	if cmd.Flags().Changed("exclude") {
+		changes = append(changes, fmt.Sprintf("  excludes: %v -> %v", cfg.Excludes, editExcludes))
+		cfg.Excludes = editExcludes
+	}
+
+	if cmd.Flags().Changed("notify") {
+		changes = append(changes, fmt.Sprintf("  notify: %s -> %s", cfg.NotifyURL, editNotify))
+		cfg.NotifyURL = editNotify
+	}
+
+	if cmd.Flags().Changed("keep-hourly") {
+		val, _ := cmd.Flags().GetInt("keep-hourly")
+		changes = append(changes, fmt.Sprintf("  keep-hourly: %d -> %d", cfg.KeepHourly, val))
+		cfg.KeepHourly = val
+	}
+
+	if cmd.Flags().Changed("keep-daily") {
+		val, _ := cmd.Flags().GetInt("keep-daily")
+		changes = append(changes, fmt.Sprintf("  keep-daily: %d -> %d", cfg.KeepDaily, val))
+		cfg.KeepDaily = val
+	}
+
+	if cmd.Flags().Changed("keep-weekly") {
+		val, _ := cmd.Flags().GetInt("keep-weekly")
+		changes = append(changes, fmt.Sprintf("  keep-weekly: %d -> %d", cfg.KeepWeekly, val))
+		cfg.KeepWeekly = val
+	}
+
+	if cmd.Flags().Changed("keep-monthly") {
+		val, _ := cmd.Flags().GetInt("keep-monthly")
+		changes = append(changes, fmt.Sprintf("  keep-monthly: %d -> %d", cfg.KeepMonthly, val))
+		cfg.KeepMonthly = val
+	}
+
+	if cmd.Flags().Changed("keep-yearly") {
+		val, _ := cmd.Flags().GetInt("keep-yearly")
+		changes = append(changes, fmt.Sprintf("  keep-yearly: %d -> %d", cfg.KeepYearly, val))
+		cfg.KeepYearly = val
+	}
+
+	// Check if any changes were made
+	if len(changes) == 0 {
+		fmt.Println("No changes specified. Use flags like --paths, --schedule, --keep-daily, etc.")
+		return nil
+	}
+
+	// Show diff
+	fmt.Println("Proposed changes:")
+	for _, change := range changes {
+		fmt.Println(change)
+	}
+
+	// Confirm unless --yes is specified
+	if !editYes {
+		if !promptConfirm("\nApply these changes?") {
+			fmt.Println("Cancelled.")
+			return nil
+		}
+	}
+
+	// Save config
+	if err := cfg.Save(config.DefaultConfigPath); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	// If schedule changed, update the timer
+	if cfg.Schedule != oldSchedule {
+		if err := systemd.WriteTimer(cfg.Schedule); err != nil {
+			return fmt.Errorf("failed to update timer: %w", err)
+		}
+		if err := systemd.ReloadDaemon(); err != nil {
+			return fmt.Errorf("failed to reload systemd: %w", err)
+		}
+		if err := systemd.RestartTimer(); err != nil {
+			return fmt.Errorf("failed to restart timer: %w", err)
+		}
+		fmt.Println("Timer updated and restarted.")
+	}
+
+	fmt.Println("Configuration updated successfully.")
 	return nil
 }
 
-func runNow(cmd *cobra.Command, args []string) error {
-	// TODO: Implement now logic
-	// - Check if configured
-	// - Run backup directly with live output
+// promptConfirm asks for user confirmation
+func promptConfirm(prompt string) bool {
+	fmt.Print(prompt + " [y/N]: ")
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	return strings.ToLower(strings.TrimSpace(response)) == "y"
+}
 
-	fmt.Println("Running backup now... (stub implementation)")
+func runNow(cmd *cobra.Command, args []string) error {
+	// Check if configured
+	if !config.Exists(config.DefaultConfigPath) {
+		return fmt.Errorf("not configured. Run 'bak setup' first")
+	}
+
+	// Load environment variables
+	if err := config.LoadEnv(config.DefaultEnvPath); err != nil {
+		return fmt.Errorf("failed to load environment: %w", err)
+	}
+
+	// Load configuration
+	cfg, err := config.Load(config.DefaultConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Check repository is accessible
+	fmt.Println("Checking repository connection...")
+	if err := backup.CheckRepository(); err != nil {
+		return fmt.Errorf("cannot connect to repository. Check RESTIC_REPOSITORY and RESTIC_PASSWORD in %s", config.DefaultEnvPath)
+	}
+
+	// Run backup with verbose output
+	fmt.Printf("Starting backup for tag '%s'...\n", cfg.Tag)
+	fmt.Printf("Paths: %s\n\n", strings.Join(cfg.Paths, ", "))
+
+	runner := backup.NewRunner(cfg)
+	runner.Verbose = true
+	if err := runner.Run(); err != nil {
+		return fmt.Errorf("backup failed: %w", err)
+	}
+
+	fmt.Println("\nBackup completed successfully!")
 	return nil
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	// TODO: Implement status logic
-	// - Show configuration
-	// - Show systemd timer status
-	// - Show recent snapshots
-	// - Show next scheduled run
+	// Check if configured
+	if !config.Exists(config.DefaultConfigPath) {
+		return fmt.Errorf("not configured. Run 'bak setup' first")
+	}
 
-	fmt.Println("Status command not yet implemented")
+	// Load configuration
+	cfg, err := config.Load(config.DefaultConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Display configuration
+	fmt.Println("=== Configuration ===")
+	fmt.Printf("  Tag:      %s\n", cfg.Tag)
+	fmt.Printf("  Paths:    %s\n", strings.Join(cfg.Paths, ", "))
+	fmt.Printf("  Schedule: %s\n", cfg.Schedule)
+	fmt.Printf("  Retention: hourly=%d, daily=%d, weekly=%d, monthly=%d, yearly=%d\n",
+		cfg.KeepHourly, cfg.KeepDaily, cfg.KeepWeekly, cfg.KeepMonthly, cfg.KeepYearly)
+	if len(cfg.Excludes) > 0 {
+		fmt.Printf("  Excludes: %s\n", strings.Join(cfg.Excludes, ", "))
+	}
+	if cfg.NotifyURL != "" {
+		fmt.Printf("  Notify:   %s\n", cfg.NotifyURL)
+	}
+
+	// Display timer status
+	fmt.Println("\n=== Timer Status ===")
+	timerStatus, err := systemd.TimerStatus()
+	if err != nil {
+		fmt.Println("  Timer not installed or not running")
+	} else {
+		fmt.Println(timerStatus)
+	}
+
+	// Display next run time
+	nextRun, err := systemd.NextRun()
+	if err == nil && strings.TrimSpace(nextRun) != "" {
+		fmt.Printf("Next scheduled run: %s\n", strings.TrimSpace(nextRun))
+	}
+
+	// Display recent snapshots
+	fmt.Println("\n=== Recent Snapshots ===")
+	if err := config.LoadEnv(config.DefaultEnvPath); err != nil {
+		fmt.Printf("  Cannot load environment: %v\n", err)
+		fmt.Printf("  Ensure %s exists with RESTIC_REPOSITORY and RESTIC_PASSWORD\n", config.DefaultEnvPath)
+		return nil
+	}
+
+	runner := backup.NewRunner(cfg)
+	if err := runner.ListSnapshots(5); err != nil {
+		fmt.Printf("  Cannot list snapshots: %v\n", err)
+		fmt.Println("  Repository may be unreachable or not initialized")
+	}
+
 	return nil
 }
 
 func runInternal(cmd *cobra.Command, args []string) error {
-	// TODO: Implement internal backup logic for systemd
-	// - Load env and config
-	// - Execute restic backup
-	// - Handle notifications
+	// Load environment variables (RESTIC_REPOSITORY, RESTIC_PASSWORD, etc.)
+	if err := config.LoadEnv(config.DefaultEnvPath); err != nil {
+		return fmt.Errorf("failed to load environment: %w", err)
+	}
 
-	fmt.Println("Running internal backup... (stub implementation)")
+	// Load configuration
+	cfg, err := config.Load(config.DefaultConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Run the backup
+	runner := backup.NewRunner(cfg)
+	if err := runner.Run(); err != nil {
+		// Log notification URL if configured (actual notification not implemented)
+		if cfg.NotifyURL != "" {
+			fmt.Fprintf(os.Stderr, "Backup failed. Notification URL configured: %s\n", cfg.NotifyURL)
+		}
+		return fmt.Errorf("backup failed: %w", err)
+	}
+
+	if cfg.NotifyURL != "" {
+		fmt.Printf("Backup completed successfully. Notification URL configured: %s\n", cfg.NotifyURL)
+	}
+
 	return nil
 }
