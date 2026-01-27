@@ -106,6 +106,8 @@ sudo bak edit --paths /var/www,/etc/nginx,/opt/certs
 | `status` | Show configuration and recent snapshots |
 | `edit` | Modify existing configuration |
 | `list` | List snapshots with detailed information |
+| `logs` | Show recent backup logs from journald |
+| `completion` | Generate shell completion scripts (bash, zsh, fish, powershell) |
 
 ## Init Options
 
@@ -131,6 +133,50 @@ sudo bak edit --paths /var/www,/etc/nginx,/opt/certs
 | `--exclude` | | Exclude pattern (repeatable) |
 | `--notify` | | Apprise notification URL |
 | `--force` | `false` | Overwrite existing configuration |
+| `--dry-run` | `false` | Preview changes without writing |
+
+## Edit Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--paths` | | Update backup paths |
+| `--schedule` | | Update schedule |
+| `--keep-hourly` | | Update hourly retention |
+| `--keep-daily` | | Update daily retention |
+| `--keep-weekly` | | Update weekly retention |
+| `--keep-monthly` | | Update monthly retention |
+| `--keep-yearly` | | Update yearly retention |
+| `--exclude` | | Update exclude patterns |
+| `--notify` | | Update notification URL |
+| `--yes` | `false` | Skip confirmation prompt |
+| `--dry-run` | `false` | Preview changes without writing |
+
+## List Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-n`, `--last` | `10` | Number of snapshots to show |
+
+## Logs Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-n`, `--lines` | `20` | Number of log lines to show |
+
+## Shell Completion
+
+Generate and load shell completions:
+
+```bash
+# Bash (add to ~/.bashrc)
+eval "$(bak completion bash)"
+
+# Zsh (add to ~/.zshrc)
+eval "$(bak completion zsh)"
+
+# Fish
+bak completion fish > ~/.config/fish/completions/bak.fish
+```
 
 ## Configuration Files
 
