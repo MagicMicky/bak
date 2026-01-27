@@ -40,7 +40,18 @@ echo "Repository: $RESTIC_REPOSITORY"
 echo "=============================================="
 
 # Get all unique primary tags (excluding retain:* tags)
-TAGS=$(restic snapshots --json 2>/dev/null | \
+SNAPSHOTS_OUTPUT=$(restic snapshots --json 2>&1) || {
+    if echo "$SNAPSHOTS_OUTPUT" | grep -q "repository is already locked"; then
+        echo "ERROR: Repository is locked. Another process may be running." >&2
+        echo "       Run 'restic unlock' to remove stale locks." >&2
+    else
+        echo "ERROR: Failed to list snapshots:" >&2
+        echo "$SNAPSHOTS_OUTPUT" >&2
+    fi
+    exit 1
+}
+
+TAGS=$(echo "$SNAPSHOTS_OUTPUT" | \
     jq -r '.[].tags[]? // empty' | \
     grep -v '^retain:' | \
     sort -u)
