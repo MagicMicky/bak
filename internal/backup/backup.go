@@ -89,7 +89,7 @@ func (r *Runner) Run() error {
 func (r *Runner) ListSnapshots(limit int) error {
 	args := []string{"snapshots", "--tag", r.Config.Tag}
 	if limit > 0 {
-		args = append(args, "--last", fmt.Sprintf("%d", limit))
+		args = append(args, "--latest", fmt.Sprintf("%d", limit))
 	}
 
 	cmd := exec.Command("restic", args...)
@@ -103,7 +103,7 @@ func (r *Runner) ListSnapshots(limit int) error {
 func (r *Runner) ListSnapshotsJSON(limit int) ([]Snapshot, error) {
 	args := []string{"snapshots", "--tag", r.Config.Tag, "--json"}
 	if limit > 0 {
-		args = append(args, "--last", fmt.Sprintf("%d", limit))
+		args = append(args, "--latest", fmt.Sprintf("%d", limit))
 	}
 
 	cmd := exec.Command("restic", args...)
@@ -117,7 +117,20 @@ func (r *Runner) ListSnapshotsJSON(limit int) ([]Snapshot, error) {
 		return nil, fmt.Errorf("failed to parse snapshot data: %w", err)
 	}
 
-	return snapshots, nil
+	// Filter to only include snapshots with matching tag
+	// This is a defensive check since restic's --tag filter may not work
+	// correctly with --latest in some versions
+	var filtered []Snapshot
+	for _, s := range snapshots {
+		for _, tag := range s.Tags {
+			if tag == r.Config.Tag {
+				filtered = append(filtered, s)
+				break
+			}
+		}
+	}
+
+	return filtered, nil
 }
 
 // CheckRepository verifies the repository is accessible
