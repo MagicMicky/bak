@@ -1,4 +1,4 @@
-.PHONY: build install clean test fmt vet lint staticcheck check test-integration test-integration-build test-integration-clean test-all
+.PHONY: build install clean test fmt vet lint staticcheck check test-integration test-integration-build test-integration-clean test-integration-up test-integration-down test-integration-logs test-integration-shell test-all
 
 BINARY_NAME=bak
 INSTALL_PATH=/usr/local/bin
@@ -52,6 +52,19 @@ test-integration:
 test-integration-clean:
 	docker rm -f bak-integration-tests 2>/dev/null || true
 	docker rmi bak-integration-test 2>/dev/null || true
+
+# Interactive debugging with docker compose
+test-integration-up: test-integration-build
+	docker compose -f docker-compose.test.yml up -d
+
+test-integration-down:
+	docker compose -f docker-compose.test.yml down -v
+
+test-integration-logs:
+	docker compose -f docker-compose.test.yml exec integration-tests journalctl -u integration-tests -f
+
+test-integration-shell:
+	docker compose -f docker-compose.test.yml exec integration-tests bash
 
 test-all: test test-integration
 
