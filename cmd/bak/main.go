@@ -89,14 +89,18 @@ Example:
 }
 
 // Now command flags
-var nowDryRun bool
+var (
+	nowDryRun  bool
+	nowVerbose bool
+)
 
 var nowCmd = &cobra.Command{
 	Use:   "now",
 	Short: "Run backup immediately",
 	Long: `Run backup immediately with live output. Requires prior configuration via 'bak setup'.
 
-Use --dry-run to see what would be backed up without actually uploading any data.`,
+Use --dry-run to see what would be backed up without actually uploading any data.
+Use --verbose to show each file being processed.`,
 	RunE: runNow,
 }
 
@@ -230,6 +234,7 @@ func init() {
 
 	// Now command flags
 	nowCmd.Flags().BoolVar(&nowDryRun, "dry-run", false, "Show what would be backed up without uploading data")
+	nowCmd.Flags().BoolVarP(&nowVerbose, "verbose", "v", false, "Show each file being processed")
 
 	// List command flags
 	listCmd.Flags().IntVarP(&listLimit, "last", "n", 10, "Number of snapshots to show")
@@ -579,7 +584,7 @@ func runNow(cmd *cobra.Command, args []string) error {
 	printer.Info("Paths: %s\n", strings.Join(cfg.Paths, ", "))
 
 	runner := backup.NewRunner(cfg)
-	runner.Verbose = true
+	runner.Verbose = nowVerbose
 	runner.DryRun = nowDryRun
 	if err := runner.Run(); err != nil {
 		printer.Error("Backup failed!")
