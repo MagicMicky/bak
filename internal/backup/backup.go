@@ -2,12 +2,23 @@
 package backup
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 
 	"github.com/magicmicky/bak/internal/config"
 )
+
+// Snapshot represents a restic snapshot from JSON output.
+type Snapshot struct {
+	ShortID  string   `json:"short_id"`
+	ID       string   `json:"id"`
+	Time     string   `json:"time"`
+	Hostname string   `json:"hostname"`
+	Paths    []string `json:"paths"`
+	Tags     []string `json:"tags"`
+}
 
 // Runner handles backup execution
 type Runner struct {
@@ -68,6 +79,27 @@ func (r *Runner) ListSnapshots(limit int) error {
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
+}
+
+// ListSnapshotsJSON returns snapshots as structured data.
+func (r *Runner) ListSnapshotsJSON(limit int) ([]Snapshot, error) {
+	args := []string{"snapshots", "--tag", r.Config.Tag, "--json"}
+	if limit > 0 {
+		args = append(args, "--last", fmt.Sprintf("%d", limit))
+	}
+
+	cmd := exec.Command("restic", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list snapshots: %w", err)
+	}
+
+	var snapshots []Snapshot
+	if err := json.Unmarshal(output, &snapshots); err != nil {
+		return nil, fmt.Errorf("failed to parse snapshot data: %w", err)
+	}
+
+	return snapshots, nil
 }
 
 // CheckRepository verifies the repository is accessible

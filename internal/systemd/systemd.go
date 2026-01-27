@@ -67,20 +67,28 @@ func GenerateOnCalendar(schedule string) string {
 	}
 }
 
-// WriteService creates the systemd service file
-func WriteService(binaryPath string) error {
+// GenerateService returns the service unit content for the given binary path.
+func GenerateService(binaryPath string) string {
 	if binaryPath == "" {
 		binaryPath = BinaryPath
 	}
-	content := fmt.Sprintf(ServiceTemplate, binaryPath)
-	return os.WriteFile(ServicePath, []byte(content), 0644)
+	return fmt.Sprintf(ServiceTemplate, binaryPath)
+}
+
+// GenerateTimer returns the timer unit content for the given schedule.
+func GenerateTimer(schedule string) string {
+	onCalendar := GenerateOnCalendar(schedule)
+	return fmt.Sprintf(TimerTemplate, onCalendar)
+}
+
+// WriteService creates the systemd service file
+func WriteService(binaryPath string) error {
+	return os.WriteFile(ServicePath, []byte(GenerateService(binaryPath)), 0644)
 }
 
 // WriteTimer creates the systemd timer file
 func WriteTimer(schedule string) error {
-	onCalendar := GenerateOnCalendar(schedule)
-	content := fmt.Sprintf(TimerTemplate, onCalendar)
-	return os.WriteFile(TimerPath, []byte(content), 0644)
+	return os.WriteFile(TimerPath, []byte(GenerateTimer(schedule)), 0644)
 }
 
 // ReloadDaemon runs systemctl daemon-reload

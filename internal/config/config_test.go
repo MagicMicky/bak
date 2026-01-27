@@ -188,3 +188,52 @@ BACKUP_SCHEDULE="daily"
 		t.Errorf("KeepDaily = %d, want 14", cfg.KeepDaily)
 	}
 }
+
+func TestContent(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Tag:         "webapp",
+		Paths:       []string{"/var/www", "/etc/nginx"},
+		Excludes:    []string{"*.log"},
+		KeepHourly:  0,
+		KeepDaily:   7,
+		KeepWeekly:  4,
+		KeepMonthly: 6,
+		KeepYearly:  0,
+		NotifyURL:   "https://notify.example.com",
+		Schedule:    "daily",
+	}
+
+	content := cfg.Content()
+
+	// Check that key fields are present
+	if !containsString(content, `BACKUP_TAG="webapp"`) {
+		t.Error("Content missing BACKUP_TAG")
+	}
+	if !containsString(content, `BACKUP_PATHS="/var/www,/etc/nginx"`) {
+		t.Error("Content missing BACKUP_PATHS")
+	}
+	if !containsString(content, `BACKUP_EXCLUDES="*.log"`) {
+		t.Error("Content missing BACKUP_EXCLUDES")
+	}
+	if !containsString(content, `KEEP_DAILY=7`) {
+		t.Error("Content missing KEEP_DAILY")
+	}
+	if !containsString(content, `NOTIFY_URL="https://notify.example.com"`) {
+		t.Error("Content missing NOTIFY_URL")
+	}
+}
+
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStringHelper(s, substr))
+}
+
+func containsStringHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
