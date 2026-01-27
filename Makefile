@@ -46,12 +46,12 @@ check: fmt-check vet staticcheck test build
 test-integration-build:
 	docker build -f Dockerfile.test -t bak-integration-test .
 
-test-integration: test-integration-build
-	docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from integration-tests
-	docker-compose -f docker-compose.test.yml down -v
+test-integration:
+	./scripts/run-integration-tests.sh
 
 test-integration-clean:
-	docker-compose -f docker-compose.test.yml down -v --rmi local
+	docker rm -f bak-integration-tests 2>/dev/null || true
+	docker rmi bak-integration-test 2>/dev/null || true
 
 test-all: test test-integration
 

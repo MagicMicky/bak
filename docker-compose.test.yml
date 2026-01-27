@@ -1,3 +1,18 @@
+# Docker Compose file for interactive debugging of integration tests
+#
+# Usage:
+#   # Start container with systemd
+#   docker compose -f docker-compose.test.yml up -d
+#
+#   # Watch test output
+#   docker compose -f docker-compose.test.yml exec integration-tests journalctl -u integration-tests -f
+#
+#   # Or exec into the container for manual testing
+#   docker compose -f docker-compose.test.yml exec integration-tests bash
+#
+#   # Clean up
+#   docker compose -f docker-compose.test.yml down -v
+
 services:
   integration-tests:
     build:
@@ -12,3 +27,6 @@ services:
     environment:
       - RESTIC_REPOSITORY=/tmp/restic-repo
       - RESTIC_PASSWORD=test-password
+    # Keep container running for debugging
+    tty: true
+    stdin_open: true

@@ -61,7 +61,11 @@ COPY . .
 # Download test dependencies
 RUN go mod download
 
-# Create entrypoint script
+# Set environment variables for restic
+ENV RESTIC_REPOSITORY=/tmp/restic-repo
+ENV RESTIC_PASSWORD=test-password
+
+# Create initialization script (runs before tests)
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
@@ -76,23 +80,47 @@ echo "test file 1" > /tmp/backup-source/file1.txt\n\
 echo "test file 2" > /tmp/backup-source/file2.txt\n\
 mkdir -p /tmp/backup-source/subdir\n\
 echo "nested file" > /tmp/backup-source/subdir/nested.txt\n\
-\n\
-# Start systemd in background and run tests\n\
-exec /lib/systemd/systemd --system &\n\
-\n\
-# Wait for systemd to be ready\n\
-sleep 3\n\
-\n\
-# Run integration tests\n\
+' > /usr/local/bin/init-test-env.sh && chmod +x /usr/local/bin/init-test-env.sh
+
+# Create test runner script
+RUN echo '#!/bin/bash\n\
 cd /app\n\
 go test -v -tags=integration ./test/integration/...\n\
-' > /entrypoint.sh && chmod +x /entrypoint.sh
+EXIT_CODE=$?\n\
+echo "Tests completed with exit code: $EXIT_CODE"\n\
+# Save exit code and shutdown\n\
+echo $EXIT_CODE > /tmp/test-exit-code\n\
+if [ $EXIT_CODE -eq 0 ]; then\n\
+    systemctl poweroff\n\
+else\n\
+    # Give time to see output before shutdown\n\
+    sleep 2\n\
+    systemctl poweroff --force\n\
+fi\n\
+' > /usr/local/bin/run-tests.sh && chmod +x /usr/local/bin/run-tests.sh
 
-# Set environment variables for restic
-ENV RESTIC_REPOSITORY=/tmp/restic-repo
-ENV RESTIC_PASSWORD=test-password
+# Create systemd service for running tests
+RUN echo '[Unit]\n\
+Description=Integration Tests\n\
+After=multi-user.target\n\
+\n\
+[Service]\n\
+Type=oneshot\n\
+Environment="RESTIC_REPOSITORY=/tmp/restic-repo"\n\
+Environment="RESTIC_PASSWORD=test-password"\n\
+ExecStartPre=/usr/local/bin/init-test-env.sh\n\
+ExecStart=/usr/local/bin/run-tests.sh\n\
+StandardOutput=journal+console\n\
+StandardError=journal+console\n\
+RemainAfterExit=yes\n\
+\n\
+[Install]\n\
+WantedBy=multi-user.target\n\
+' > /etc/systemd/system/integration-tests.service
+
+# Enable the test service
+RUN systemctl enable integration-tests.service
 
 # Use systemd as init
 STOPSIGNAL SIGRTMIN+3
-
-ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/lib/systemd/systemd"]
