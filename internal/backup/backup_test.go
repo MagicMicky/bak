@@ -2,6 +2,7 @@ package backup
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/magicmicky/bak/internal/config"
@@ -85,5 +86,49 @@ func TestSnapshot_UnmarshalJSONArray(t *testing.T) {
 	}
 	if snapshots[1].ShortID != "def456" {
 		t.Errorf("snapshots[1].ShortID = %q, want %q", snapshots[1].ShortID, "def456")
+	}
+}
+
+func TestResticAvailable(t *testing.T) {
+	t.Parallel()
+
+	// This test verifies the function runs without panic.
+	// The actual result depends on whether restic is installed.
+	_ = ResticAvailable()
+}
+
+func TestRequireRestic_ReturnsCorrectError(t *testing.T) {
+	t.Parallel()
+
+	err := RequireRestic()
+
+	// If restic is not available, error should be ErrResticNotFound
+	if err != nil && !errors.Is(err, ErrResticNotFound) {
+		t.Errorf("RequireRestic() returned unexpected error: %v", err)
+	}
+
+	// If restic is available, error should be nil
+	if ResticAvailable() && err != nil {
+		t.Errorf("RequireRestic() returned error when restic is available: %v", err)
+	}
+
+	// If restic is not available, error should not be nil
+	if !ResticAvailable() && err == nil {
+		t.Error("RequireRestic() returned nil when restic is not available")
+	}
+}
+
+func TestErrResticNotFound(t *testing.T) {
+	t.Parallel()
+
+	// Verify the error message is descriptive
+	if ErrResticNotFound.Error() == "" {
+		t.Error("ErrResticNotFound has empty message")
+	}
+
+	// Verify errors.Is works correctly
+	err := ErrResticNotFound
+	if !errors.Is(err, ErrResticNotFound) {
+		t.Error("errors.Is failed to match ErrResticNotFound")
 	}
 }

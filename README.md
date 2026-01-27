@@ -13,8 +13,37 @@ A simple CLI wrapper for [restic](https://restic.net/) backups, designed for hom
 
 ## Prerequisites
 
-- restic installed and available in PATH
-- systemd (for scheduled backups)
+### Required: restic
+
+`bak` is a wrapper around [restic](https://restic.net/) and requires it to be installed and available in your PATH.
+
+**Install restic:**
+
+```bash
+# Debian/Ubuntu
+sudo apt install restic
+
+# Fedora/RHEL
+sudo dnf install restic
+
+# Arch Linux
+sudo pacman -S restic
+
+# macOS (Homebrew)
+brew install restic
+
+# Or download from https://github.com/restic/restic/releases
+```
+
+Verify installation:
+
+```bash
+restic version
+```
+
+### Optional: systemd
+
+systemd is required for scheduled automatic backups. Manual backups with `bak now` work without systemd.
 
 ## Installation
 

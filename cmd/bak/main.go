@@ -534,6 +534,11 @@ func promptConfirm(prompt string) bool {
 }
 
 func runNow(cmd *cobra.Command, args []string) error {
+	// Check if restic is available
+	if err := backup.RequireRestic(); err != nil {
+		return fmt.Errorf("%w. Please install restic: https://restic.net/", err)
+	}
+
 	// Check if configured
 	if !config.Exists(config.DefaultConfigPath) {
 		return fmt.Errorf("not configured. Run 'bak setup' first")
@@ -572,6 +577,11 @@ func runNow(cmd *cobra.Command, args []string) error {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
+	// Check if restic is available
+	if err := backup.RequireRestic(); err != nil {
+		return fmt.Errorf("%w. Please install restic: https://restic.net/", err)
+	}
+
 	// Check if configured
 	if !config.Exists(config.DefaultConfigPath) {
 		return fmt.Errorf("not configured. Run 'bak setup' first")
@@ -630,6 +640,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runInternal(cmd *cobra.Command, args []string) error {
+	// Check if restic is available
+	if err := backup.RequireRestic(); err != nil {
+		return fmt.Errorf("%w. Please install restic: https://restic.net/", err)
+	}
+
 	// Load environment variables (RESTIC_REPOSITORY, RESTIC_PASSWORD, etc.)
 	if err := config.LoadEnv(config.DefaultEnvPath); err != nil {
 		return fmt.Errorf("failed to load environment: %w", err)
@@ -673,6 +688,11 @@ func runInternal(cmd *cobra.Command, args []string) error {
 }
 
 func runList(cmd *cobra.Command, args []string) error {
+	// Check if restic is available
+	if err := backup.RequireRestic(); err != nil {
+		return fmt.Errorf("%w. Please install restic: https://restic.net/", err)
+	}
+
 	// Check if configured
 	if !config.Exists(config.DefaultConfigPath) {
 		return fmt.Errorf("not configured. Run 'bak setup' first")
@@ -752,6 +772,11 @@ func runCompletion(cmd *cobra.Command, args []string) error {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	// Check if restic is available
+	if err := backup.RequireRestic(); err != nil {
+		return fmt.Errorf("%w. Please install restic: https://restic.net/", err)
+	}
+
 	// Get repository URL: flag → env → prompt
 	repo := initRepo
 	if repo == "" {

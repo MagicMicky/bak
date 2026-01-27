@@ -3,12 +3,30 @@ package backup
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 
 	"github.com/magicmicky/bak/internal/config"
 )
+
+// ErrResticNotFound is returned when restic binary is not found in PATH.
+var ErrResticNotFound = errors.New("restic is not installed or not found in PATH")
+
+// ResticAvailable checks if the restic binary is available in PATH.
+func ResticAvailable() bool {
+	_, err := exec.LookPath("restic")
+	return err == nil
+}
+
+// RequireRestic returns an error if restic is not available.
+func RequireRestic() error {
+	if !ResticAvailable() {
+		return ErrResticNotFound
+	}
+	return nil
+}
 
 // Snapshot represents a restic snapshot from JSON output.
 type Snapshot struct {
