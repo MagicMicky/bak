@@ -41,7 +41,7 @@ type Snapshot struct {
 // Runner handles backup execution
 type Runner struct {
 	Config  *config.Config
-	Verbose bool
+	Verbose bool // Pass -v to restic for detailed file output
 	DryRun  bool
 }
 
@@ -57,9 +57,17 @@ func (r *Runner) Run() error {
 	// Build restic command arguments
 	args := []string{"backup"}
 
-	// Add dry-run flag if requested (must come before paths)
+	// Add dry-run flag if requested
 	if r.DryRun {
-		args = append(args, "-n", "-vv")
+		args = append(args, "-n")
+	}
+
+	// Add verbosity flags
+	// -vv shows all files being processed (useful for dry-run validation)
+	// Without verbose, restic shows progress bar for normal backups
+	// and just summary for dry-run
+	if r.Verbose {
+		args = append(args, "-vv")
 	}
 
 	// Add paths
@@ -83,10 +91,6 @@ func (r *Runner) Run() error {
 	cmd := exec.Command("restic", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-
-	if r.Verbose {
-		fmt.Printf("Executing: restic %v\n", args)
-	}
 
 	return cmd.Run()
 }
