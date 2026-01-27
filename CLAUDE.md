@@ -5,12 +5,12 @@ Project guidelines for Claude Code sessions working on `bak`.
 ## Session Workflow
 
 ### Branch Strategy
-- **Create a new branch at the start of each session** using the format: `claude/<brief-description>`
+- **Create a new branch for big features** using the format: `claude/<brief-description>`
+- Small fixes can be committed to an existing feature branch
 - Never commit directly to `main`
-- Push your branch and create a PR for review
 
 ```bash
-# At session start
+# For new features
 git checkout main
 git pull origin main
 git checkout -b claude/<description>
@@ -29,9 +29,14 @@ git push -u origin claude/<description>
 ```
 
 ### Pull Requests
-- Create a PR when work is ready for review
+- **Always create a PR after pushing changes and provide the PR link**
 - Ensure CI passes before requesting merge
 - PR description should summarize changes and link related issues
+
+```bash
+gh pr create --title "feat: description" --body "Summary of changes"
+# Always share the PR URL with the user
+```
 
 ## Go Best Practices
 
