@@ -1,0 +1,97 @@
+# Multi-stage Dockerfile for integration testing with systemd and restic
+# Stage 1: Build the bak binary
+FROM golang:1.21-bookworm AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 go build -o /bak ./cmd/bak
+
+# Stage 2: Test environment with systemd and restic
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV container=docker
+
+# Install systemd and required packages
+RUN apt-get update && apt-get install -y \
+    systemd \
+    systemd-sysv \
+    dbus \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go for running tests
+RUN curl -LO https://go.dev/dl/go1.21.13.linux-amd64.tar.gz \
+    && tar -C /usr/local -xzf go1.21.13.linux-amd64.tar.gz \
+    && rm go1.21.13.linux-amd64.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/go"
+ENV PATH="${GOPATH}/bin:${PATH}"
+
+# Install restic v0.16.4
+RUN curl -LO https://github.com/restic/restic/releases/download/v0.16.4/restic_0.16.4_linux_amd64.bz2 \
+    && bunzip2 restic_0.16.4_linux_amd64.bz2 \
+    && mv restic_0.16.4_linux_amd64 /usr/local/bin/restic \
+    && chmod +x /usr/local/bin/restic
+
+# Clean up systemd units that cause issues in containers
+RUN rm -f /lib/systemd/system/multi-user.target.wants/* \
+    && rm -f /etc/systemd/system/*.wants/* \
+    && rm -f /lib/systemd/system/local-fs.target.wants/* \
+    && rm -f /lib/systemd/system/sockets.target.wants/*udev* \
+    && rm -f /lib/systemd/system/sockets.target.wants/*initctl* \
+    && rm -f /lib/systemd/system/sysinit.target.wants/systemd-tmpfiles-setup* \
+    && rm -f /lib/systemd/system/systemd-update-utmp*
+
+# Create config directory
+RUN mkdir -p /etc/backup
+
+# Copy bak binary from builder
+COPY --from=builder /bak /usr/local/bin/bak
+
+# Copy source code for running tests
+WORKDIR /app
+COPY . .
+
+# Download test dependencies
+RUN go mod download
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Initialize restic repository if it does not exist\n\
+if [ ! -d "$RESTIC_REPOSITORY" ]; then\n\
+    restic init\n\
+fi\n\
+\n\
+# Create test data directory\n\
+mkdir -p /tmp/backup-source\n\
+echo "test file 1" > /tmp/backup-source/file1.txt\n\
+echo "test file 2" > /tmp/backup-source/file2.txt\n\
+mkdir -p /tmp/backup-source/subdir\n\
+echo "nested file" > /tmp/backup-source/subdir/nested.txt\n\
+\n\
+# Start systemd in background and run tests\n\
+exec /lib/systemd/systemd --system &\n\
+\n\
+# Wait for systemd to be ready\n\
+sleep 3\n\
+\n\
+# Run integration tests\n\
+cd /app\n\
+go test -v -tags=integration ./test/integration/...\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Set environment variables for restic
+ENV RESTIC_REPOSITORY=/tmp/restic-repo
+ENV RESTIC_PASSWORD=test-password
+
+# Use systemd as init
+STOPSIGNAL SIGRTMIN+3
+
+ENTRYPOINT ["/entrypoint.sh"]

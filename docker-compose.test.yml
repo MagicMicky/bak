@@ -1,0 +1,14 @@
+services:
+  integration-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    privileged: true
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /run/lock
+    environment:
+      - RESTIC_REPOSITORY=/tmp/restic-repo
+      - RESTIC_PASSWORD=test-password
