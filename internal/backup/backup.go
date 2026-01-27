@@ -42,6 +42,7 @@ type Snapshot struct {
 type Runner struct {
 	Config  *config.Config
 	Verbose bool
+	DryRun  bool
 }
 
 // NewRunner creates a new backup runner
@@ -55,6 +56,11 @@ func NewRunner(cfg *config.Config) *Runner {
 func (r *Runner) Run() error {
 	// Build restic command arguments
 	args := []string{"backup"}
+
+	// Add dry-run flag if requested (must come before paths)
+	if r.DryRun {
+		args = append(args, "-n", "-vv")
+	}
 
 	// Add paths
 	args = append(args, r.Config.Paths...)

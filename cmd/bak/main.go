@@ -88,11 +88,16 @@ Example:
 	RunE: runEdit,
 }
 
+// Now command flags
+var nowDryRun bool
+
 var nowCmd = &cobra.Command{
 	Use:   "now",
 	Short: "Run backup immediately",
-	Long:  `Run backup immediately with live output. Requires prior configuration via 'bak setup'.`,
-	RunE:  runNow,
+	Long: `Run backup immediately with live output. Requires prior configuration via 'bak setup'.
+
+Use --dry-run to see what would be backed up without actually uploading any data.`,
+	RunE: runNow,
 }
 
 var statusCmd = &cobra.Command{
@@ -222,6 +227,9 @@ func init() {
 	editCmd.RegisterFlagCompletionFunc("schedule", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"daily", "hourly"}, cobra.ShellCompDirectiveNoFileComp
 	})
+
+	// Now command flags
+	nowCmd.Flags().BoolVar(&nowDryRun, "dry-run", false, "Show what would be backed up without uploading data")
 
 	// List command flags
 	listCmd.Flags().IntVarP(&listLimit, "last", "n", 10, "Number of snapshots to show")
@@ -562,17 +570,27 @@ func runNow(cmd *cobra.Command, args []string) error {
 	}
 
 	// Run backup with verbose output
-	printer.Header("Starting backup for tag '%s'...", cfg.Tag)
+	if nowDryRun {
+		printer.Header("=== Dry Run Mode ===")
+		printer.Info("Starting dry-run backup for tag '%s'...", cfg.Tag)
+	} else {
+		printer.Header("Starting backup for tag '%s'...", cfg.Tag)
+	}
 	printer.Info("Paths: %s\n", strings.Join(cfg.Paths, ", "))
 
 	runner := backup.NewRunner(cfg)
 	runner.Verbose = true
+	runner.DryRun = nowDryRun
 	if err := runner.Run(); err != nil {
 		printer.Error("Backup failed!")
 		return fmt.Errorf("backup failed: %w", err)
 	}
 
-	printer.Success("\nBackup completed successfully!")
+	if nowDryRun {
+		printer.Success("\nDry run completed. No data was uploaded.")
+	} else {
+		printer.Success("\nBackup completed successfully!")
+	}
 	return nil
 }
 
