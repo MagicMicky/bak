@@ -27,6 +27,9 @@ func TestNewRunner(t *testing.T) {
 	if runner.Verbose {
 		t.Error("Verbose should default to false")
 	}
+	if runner.DryRun {
+		t.Error("DryRun should default to false")
+	}
 }
 
 func TestSnapshot_UnmarshalJSON(t *testing.T) {
