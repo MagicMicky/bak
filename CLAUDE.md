@@ -5,12 +5,12 @@ Project guidelines for Claude Code sessions working on `bak`.
 ## Session Workflow
 
 ### Branch Strategy
-- **Create a new branch at the start of each session** using the format: `claude/<brief-description>`
+- **Create a new branch for big features** using the format: `claude/<brief-description>`
+- Small fixes can be committed to an existing feature branch
 - Never commit directly to `main`
-- Push your branch and create a PR for review
 
 ```bash
-# At session start
+# For new features
 git checkout main
 git pull origin main
 git checkout -b claude/<description>
@@ -29,9 +29,14 @@ git push -u origin claude/<description>
 ```
 
 ### Pull Requests
-- Create a PR when work is ready for review
+- **Always create a PR after pushing changes and provide the PR link**
 - Ensure CI passes before requesting merge
 - PR description should summarize changes and link related issues
+
+```bash
+gh pr create --title "feat: description" --body "Summary of changes"
+# Always share the PR URL with the user
+```
 
 ## Go Best Practices
 
@@ -105,6 +110,43 @@ make lint     # Check for issues
 make test     # Run tests
 make build    # Verify it builds
 ```
+
+## Versioning and Releases
+
+Releases are automated on merge to `main`. Binaries are built for Linux and macOS (amd64/arm64).
+
+### Version Bumping
+
+By default, merging to main increments the **patch** version (e.g., v1.0.0 → v1.0.1).
+
+To bump **minor** or **major** version, include a tag in the merge commit message:
+
+| Change Type | Tag | Example | When to Use |
+|-------------|-----|---------|-------------|
+| Patch | (default) | v1.0.0 → v1.0.1 | Bug fixes, small improvements |
+| Minor | `[minor]` | v1.0.0 → v1.1.0 | New features, backward-compatible changes |
+| Major | `[major]` | v1.0.0 → v2.0.0 | Breaking changes, major rewrites |
+
+### How to Trigger Version Bumps
+
+Include the tag anywhere in the PR title or merge commit:
+
+```bash
+# Minor version bump
+gh pr create --title "feat: add new backup command [minor]" ...
+
+# Major version bump (breaking change)
+gh pr create --title "refactor: redesign config format [major]" ...
+
+# Patch version (default, no tag needed)
+gh pr create --title "fix: handle empty paths correctly" ...
+```
+
+### Semantic Versioning Guidelines
+
+- **MAJOR**: Incompatible API/CLI changes, config format changes, removed features
+- **MINOR**: New commands, new flags, new features (backward-compatible)
+- **PATCH**: Bug fixes, documentation, internal refactoring
 
 ## Project Context
 
