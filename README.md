@@ -70,18 +70,22 @@ sudo install -m 755 bak /usr/local/bin/bak
 First, configure repository credentials (one-time per machine):
 
 ```bash
-# Interactive mode
-sudo bak init --repo rest:https://user@backup.example.com:8000
+# Interactive mode (prompts for repository encryption password)
+sudo bak init --repo rest:https://user:restpass@backup.example.com:8000
 
 # Non-interactive mode
-sudo bak init --repo rest:https://user@backup.example.com:8000 --password "secret"
+sudo bak init --repo rest:https://user:restpass@backup.example.com:8000 --password "repopass"
 
 # Using environment variables
-sudo RESTIC_REPOSITORY=rest:https://... RESTIC_PASSWORD=secret bak init
+sudo RESTIC_REPOSITORY=rest:https://user:restpass@backup.example.com:8000 RESTIC_PASSWORD=repopass bak init
 
 # Preview changes without writing
 sudo bak init --repo ... --password ... --dry-run
 ```
+
+**Note:** There are two separate credentials:
+- **REST server auth** (in URL): `user:restpass` - HTTP basic auth to access the REST server
+- **Repository password** (`--password`): Encryption password for your backup data (set when you created the repository with `restic init`)
 
 ### Configure Backups
 
@@ -214,7 +218,7 @@ bak completion fish > ~/.config/fish/completions/bak.fish
 Environment variables for restic (created by `bak init`):
 
 ```bash
-RESTIC_REPOSITORY="rest:https://user@backups.example.com/"
+RESTIC_REPOSITORY="rest:https://user:restpass@backups.example.com:8000/"
 RESTIC_PASSWORD_FILE="/etc/backup/restic-password"
 RESTIC_CACHE_DIR="/var/cache/restic"
 ```
