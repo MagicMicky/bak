@@ -1,4 +1,4 @@
-.PHONY: build install clean test fmt vet lint staticcheck check
+.PHONY: build install clean test fmt vet lint staticcheck check test-integration test-integration-build test-integration-clean test-all
 
 BINARY_NAME=bak
 INSTALL_PATH=/usr/local/bin
@@ -42,5 +42,17 @@ lint: fmt vet staticcheck
 
 check: fmt-check vet staticcheck test build
 	@echo "All checks passed"
+
+test-integration-build:
+	docker build -f Dockerfile.test -t bak-integration-test .
+
+test-integration: test-integration-build
+	docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from integration-tests
+	docker-compose -f docker-compose.test.yml down -v
+
+test-integration-clean:
+	docker-compose -f docker-compose.test.yml down -v --rmi local
+
+test-all: test test-integration
 
 .DEFAULT_GOAL := build
