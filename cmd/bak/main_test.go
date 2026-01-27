@@ -111,3 +111,87 @@ func TestPromptConfirm(t *testing.T) {
 	// without mocking. This is left as a placeholder for potential integration testing.
 	t.Skip("promptConfirm requires stdin mocking")
 }
+
+func TestValidateCredentials(t *testing.T) {
+	// Test that validateCredentials properly sets environment variables and calls restic
+	// Note: This test requires restic to be installed and will fail with invalid credentials
+	t.Parallel()
+
+	// Test with obviously invalid credentials
+	err := validateCredentials("rest:https://invalid.example.com:8000", "wrongpassword")
+	if err == nil {
+		t.Error("validateCredentials() expected error for invalid credentials, got nil")
+	}
+}
+
+func TestPromptInput(t *testing.T) {
+	// Note: promptInput reads from stdin, so we can't easily test it in unit tests
+	// without mocking. This is left as a placeholder for potential integration testing.
+	t.Skip("promptInput requires stdin mocking")
+}
+
+func TestPromptPassword(t *testing.T) {
+	// Note: promptPassword reads from stdin with terminal handling,
+	// so we can't easily test it in unit tests without mocking.
+	t.Skip("promptPassword requires stdin/terminal mocking")
+}
+
+func TestRunInit_MissingRepo(t *testing.T) {
+	t.Parallel()
+
+	// Clear environment variables that might be set
+	originalRepo := os.Getenv("RESTIC_REPOSITORY")
+	originalPass := os.Getenv("RESTIC_PASSWORD")
+	os.Unsetenv("RESTIC_REPOSITORY")
+	os.Unsetenv("RESTIC_PASSWORD")
+	defer func() {
+		if originalRepo != "" {
+			os.Setenv("RESTIC_REPOSITORY", originalRepo)
+		}
+		if originalPass != "" {
+			os.Setenv("RESTIC_PASSWORD", originalPass)
+		}
+	}()
+
+	// Reset flags
+	initRepo = ""
+	initPassword = "testpass"
+	initForce = false
+	initDryRun = false
+
+	// This should fail because repo is required and stdin is not a terminal
+	err := runInit(nil, nil)
+	if err == nil {
+		t.Error("runInit() expected error when repo is missing, got nil")
+	}
+}
+
+func TestRunInit_MissingPassword(t *testing.T) {
+	t.Parallel()
+
+	// Clear environment variables
+	originalRepo := os.Getenv("RESTIC_REPOSITORY")
+	originalPass := os.Getenv("RESTIC_PASSWORD")
+	os.Unsetenv("RESTIC_REPOSITORY")
+	os.Unsetenv("RESTIC_PASSWORD")
+	defer func() {
+		if originalRepo != "" {
+			os.Setenv("RESTIC_REPOSITORY", originalRepo)
+		}
+		if originalPass != "" {
+			os.Setenv("RESTIC_PASSWORD", originalPass)
+		}
+	}()
+
+	// Set repo via flag but no password
+	initRepo = "rest:https://test.example.com:8000"
+	initPassword = ""
+	initForce = false
+	initDryRun = false
+
+	// This should fail because password is required and stdin is not a terminal
+	err := runInit(nil, nil)
+	if err == nil {
+		t.Error("runInit() expected error when password is missing, got nil")
+	}
+}

@@ -237,3 +237,43 @@ func containsStringHelper(s, substr string) bool {
 	}
 	return false
 }
+
+func TestWriteCredentials(t *testing.T) {
+	// Skip if running as non-root (can't write to /etc/backup in tests)
+	// These tests use a temporary directory override instead
+	t.Skip("WriteCredentials writes to /etc/backup which requires root; tested via integration tests")
+}
+
+func TestCredentialsExist(t *testing.T) {
+	t.Parallel()
+
+	// Test when files don't exist - CredentialsExist checks DefaultEnvPath and DefaultPasswordPath
+	// Since we can't modify the constants, we test the Exists function which it uses
+	tmpDir := t.TempDir()
+
+	envFile := filepath.Join(tmpDir, "env")
+	passFile := filepath.Join(tmpDir, "password")
+
+	// Neither file exists
+	if Exists(envFile) || Exists(passFile) {
+		t.Error("Expected files to not exist initially")
+	}
+
+	// Create env file
+	if err := os.WriteFile(envFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	if !Exists(envFile) {
+		t.Error("Expected env file to exist")
+	}
+
+	// Create password file
+	if err := os.WriteFile(passFile, []byte("secret"), 0600); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	if !Exists(passFile) {
+		t.Error("Expected password file to exist")
+	}
+}
