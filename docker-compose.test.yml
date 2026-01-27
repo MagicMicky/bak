@@ -1,17 +1,13 @@
-# Docker Compose file for interactive debugging of integration tests
+# Docker Compose file for integration tests
 #
-# Usage:
-#   # Start container with systemd
-#   docker compose -f docker-compose.test.yml up -d
+# Manual testing:
+#   make test-integration-up      # Start container (no auto-run tests)
+#   make test-integration-shell   # Shell into container
+#   # Inside container: bak setup --tag test --paths /tmp/backup-source
+#   make test-integration-down    # Cleanup
 #
-#   # Watch test output
-#   docker compose -f docker-compose.test.yml exec integration-tests journalctl -u integration-tests -f
-#
-#   # Or exec into the container for manual testing
-#   docker compose -f docker-compose.test.yml exec integration-tests bash
-#
-#   # Clean up
-#   docker compose -f docker-compose.test.yml down -v
+# Run specific test manually inside container:
+#   go test -v -tags=integration ./test/integration/... -run TestSetup_BasicConfiguration
 
 services:
   integration-tests:
@@ -27,6 +23,7 @@ services:
     environment:
       - RESTIC_REPOSITORY=/tmp/restic-repo
       - RESTIC_PASSWORD=test-password
-    # Keep container running for debugging
+      # Set AUTO_RUN_TESTS=1 to run tests automatically (used by CI)
+      # Omit or set to 0 for manual testing
     tty: true
     stdin_open: true

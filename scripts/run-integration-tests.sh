@@ -21,6 +21,7 @@ docker run -d \
     -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
     --tmpfs /run \
     --tmpfs /run/lock \
+    -e AUTO_RUN_TESTS=1 \
     "$IMAGE_NAME"
 
 echo "Waiting for tests to complete..."

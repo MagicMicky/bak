@@ -65,6 +65,11 @@ RUN go mod download
 ENV RESTIC_REPOSITORY=/tmp/restic-repo
 ENV RESTIC_PASSWORD=test-password
 
+# Also set them in profile so they're available in interactive shells
+RUN echo 'export RESTIC_REPOSITORY=/tmp/restic-repo' >> /etc/profile.d/restic.sh \
+    && echo 'export RESTIC_PASSWORD=test-password' >> /etc/profile.d/restic.sh \
+    && chmod +x /etc/profile.d/restic.sh
+
 # Create initialization script (runs before tests)
 RUN echo '#!/bin/bash\n\
 set -e\n\
@@ -99,16 +104,33 @@ else\n\
 fi\n\
 ' > /usr/local/bin/run-tests.sh && chmod +x /usr/local/bin/run-tests.sh
 
-# Create systemd service for running tests
+# Create systemd service for initializing test environment (always runs)
 RUN echo '[Unit]\n\
-Description=Integration Tests\n\
-After=multi-user.target\n\
+Description=Initialize Test Environment\n\
+After=local-fs.target\n\
 \n\
 [Service]\n\
 Type=oneshot\n\
 Environment="RESTIC_REPOSITORY=/tmp/restic-repo"\n\
 Environment="RESTIC_PASSWORD=test-password"\n\
-ExecStartPre=/usr/local/bin/init-test-env.sh\n\
+ExecStart=/usr/local/bin/init-test-env.sh\n\
+RemainAfterExit=yes\n\
+\n\
+[Install]\n\
+WantedBy=multi-user.target\n\
+' > /etc/systemd/system/init-test-env.service
+
+# Create systemd service for running tests (only when AUTO_RUN_TESTS=1)
+RUN echo '[Unit]\n\
+Description=Integration Tests\n\
+After=init-test-env.service\n\
+Requires=init-test-env.service\n\
+ConditionEnvironment=AUTO_RUN_TESTS=1\n\
+\n\
+[Service]\n\
+Type=oneshot\n\
+Environment="RESTIC_REPOSITORY=/tmp/restic-repo"\n\
+Environment="RESTIC_PASSWORD=test-password"\n\
 ExecStart=/usr/local/bin/run-tests.sh\n\
 StandardOutput=journal+console\n\
 StandardError=journal+console\n\
@@ -118,8 +140,8 @@ RemainAfterExit=yes\n\
 WantedBy=multi-user.target\n\
 ' > /etc/systemd/system/integration-tests.service
 
-# Enable the test service
-RUN systemctl enable integration-tests.service
+# Enable both services
+RUN systemctl enable init-test-env.service integration-tests.service
 
 # Use systemd as init
 STOPSIGNAL SIGRTMIN+3
