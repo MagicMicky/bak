@@ -4,17 +4,24 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/magicmicky/bak/internal/backup"
 	"github.com/magicmicky/bak/internal/config"
+	"github.com/magicmicky/bak/internal/notify"
 	"github.com/magicmicky/bak/internal/systemd"
+	"github.com/magicmicky/bak/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 var version = "dev"
+
+// Global printer for colored output
+var printer = ui.Default()
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
@@ -42,6 +49,7 @@ var (
 	setupExcludes    []string
 	setupNotify      string
 	setupForce       bool
+	setupDryRun      bool
 )
 
 var setupCmd = &cobra.Command{
@@ -51,7 +59,8 @@ var setupCmd = &cobra.Command{
 
 Example:
   sudo bak setup --tag webapp --paths /var/www,/etc/nginx
-  sudo bak setup --tag gameserver --paths /opt/game/saves --schedule hourly --keep-hourly 24`,
+  sudo bak setup --tag gameserver --paths /opt/game/saves --schedule hourly --keep-hourly 24
+  bak setup --tag test --paths /tmp --dry-run`,
 	RunE: runSetup,
 }
 
@@ -62,6 +71,7 @@ var (
 	editExcludes []string
 	editNotify   string
 	editYes      bool
+	editDryRun   bool
 )
 
 var editCmd = &cobra.Command{
@@ -72,7 +82,8 @@ Only specified flags will be changed.
 
 Example:
   sudo bak edit --keep-daily 14 --keep-weekly 8
-  sudo bak edit --paths /var/www,/etc/nginx,/opt/certs`,
+  sudo bak edit --paths /var/www,/etc/nginx,/opt/certs
+  bak edit --schedule hourly --dry-run`,
 	RunE: runEdit,
 }
 
@@ -97,6 +108,57 @@ var runInternalCmd = &cobra.Command{
 	RunE:   runInternal,
 }
 
+// List command flags
+var listLimit int
+
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List snapshots with restore hints",
+	Long:  `List recent snapshots with their IDs and restore command hints.`,
+	RunE:  runList,
+}
+
+// Logs command flags
+var logsLines int
+
+var logsCmd = &cobra.Command{
+	Use:   "logs",
+	Short: "Show recent backup logs from journald",
+	Long:  `Display recent backup service logs from systemd journal.`,
+	RunE:  runLogs,
+}
+
+var completionCmd = &cobra.Command{
+	Use:   "completion [bash|zsh|fish|powershell]",
+	Short: "Generate shell completion scripts",
+	Long: `Generate shell completion scripts for the specified shell.
+
+To load completions:
+
+Bash:
+  $ source <(bak completion bash)
+  # Or add to ~/.bashrc:
+  # eval "$(bak completion bash)"
+
+Zsh:
+  $ source <(bak completion zsh)
+  # Or add to ~/.zshrc:
+  # eval "$(bak completion zsh)"
+
+Fish:
+  $ bak completion fish | source
+  # Or add to ~/.config/fish/completions/:
+  # bak completion fish > ~/.config/fish/completions/bak.fish
+
+PowerShell:
+  PS> bak completion powershell | Out-String | Invoke-Expression
+`,
+	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
+	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+	DisableFlagsInUseLine: true,
+	RunE:                  runCompletion,
+}
+
 func init() {
 	// Setup command flags
 	setupCmd.Flags().StringVar(&setupTag, "tag", "", "Unique identifier for this host's backups (required)")
@@ -110,8 +172,14 @@ func init() {
 	setupCmd.Flags().StringArrayVar(&setupExcludes, "exclude", nil, "Exclude pattern (can be specified multiple times)")
 	setupCmd.Flags().StringVar(&setupNotify, "notify", "", "Apprise notification URL")
 	setupCmd.Flags().BoolVar(&setupForce, "force", false, "Overwrite existing configuration")
+	setupCmd.Flags().BoolVar(&setupDryRun, "dry-run", false, "Show what would be written without making changes")
 	setupCmd.MarkFlagRequired("tag")
 	setupCmd.MarkFlagRequired("paths")
+
+	// Setup command completions
+	setupCmd.RegisterFlagCompletionFunc("schedule", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"daily", "hourly"}, cobra.ShellCompDirectiveNoFileComp
+	})
 
 	// Edit command flags
 	editCmd.Flags().StringVar(&editPaths, "paths", "", "Update backup paths")
@@ -119,6 +187,7 @@ func init() {
 	editCmd.Flags().StringArrayVar(&editExcludes, "exclude", nil, "Update exclude patterns")
 	editCmd.Flags().StringVar(&editNotify, "notify", "", "Update notification URL")
 	editCmd.Flags().BoolVar(&editYes, "yes", false, "Skip confirmation prompt")
+	editCmd.Flags().BoolVar(&editDryRun, "dry-run", false, "Show what would be changed without making changes")
 
 	// Integer flags for edit need special handling to detect if set
 	editCmd.Flags().Int("keep-hourly", 0, "Update hourly retention")
@@ -127,12 +196,26 @@ func init() {
 	editCmd.Flags().Int("keep-monthly", 0, "Update monthly retention")
 	editCmd.Flags().Int("keep-yearly", 0, "Update yearly retention")
 
+	// Edit command completions
+	editCmd.RegisterFlagCompletionFunc("schedule", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"daily", "hourly"}, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	// List command flags
+	listCmd.Flags().IntVarP(&listLimit, "last", "n", 10, "Number of snapshots to show")
+
+	// Logs command flags
+	logsCmd.Flags().IntVarP(&logsLines, "lines", "n", 20, "Number of log lines to show")
+
 	// Add commands to root
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(editCmd)
 	rootCmd.AddCommand(nowCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(runInternalCmd)
+	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(logsCmd)
+	rootCmd.AddCommand(completionCmd)
 }
 
 // validateTag checks if tag contains only alphanumeric characters, dashes, and underscores
@@ -157,7 +240,7 @@ func parsePaths(pathsStr string) ([]string, []string) {
 		}
 		validPaths = append(validPaths, p)
 		if _, err := os.Stat(p); os.IsNotExist(err) {
-			warnings = append(warnings, fmt.Sprintf("Warning: path does not exist: %s", p))
+			warnings = append(warnings, fmt.Sprintf("path does not exist: %s", p))
 		}
 	}
 	return validPaths, warnings
@@ -177,18 +260,12 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	// Print warnings for non-existent paths
 	for _, w := range warnings {
-		fmt.Fprintln(os.Stderr, w)
+		printer.Warning("Warning: %s", w)
 	}
 
-	// Check if config already exists
-	if config.Exists(config.DefaultConfigPath) && !setupForce {
+	// Check if config already exists (only if not dry-run)
+	if !setupDryRun && config.Exists(config.DefaultConfigPath) && !setupForce {
 		return fmt.Errorf("configuration already exists at %s. Use --force to overwrite", config.DefaultConfigPath)
-	}
-
-	// Create config directory
-	configDir := filepath.Dir(config.DefaultConfigPath)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
 	// Build configuration
@@ -205,12 +282,49 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		Schedule:    setupSchedule,
 	}
 
+	// Dry run mode
+	if setupDryRun {
+		printer.Header("=== Dry Run Mode ===")
+		printer.Info("")
+
+		// Find the binary path for service generation
+		binaryPath, err := os.Executable()
+		if err != nil {
+			binaryPath = systemd.BinaryPath
+		}
+		binaryPath, _ = filepath.Abs(binaryPath)
+
+		printer.Header("Would write to %s:", config.DefaultConfigPath)
+		printer.Info(strings.Repeat("-", 50))
+		fmt.Print(cfg.Content())
+
+		printer.Info("")
+		printer.Header("Would write to %s:", systemd.ServicePath)
+		printer.Info(strings.Repeat("-", 50))
+		fmt.Print(systemd.GenerateService(binaryPath))
+
+		printer.Info("")
+		printer.Header("Would write to %s:", systemd.TimerPath)
+		printer.Info(strings.Repeat("-", 50))
+		fmt.Print(systemd.GenerateTimer(cfg.Schedule))
+
+		printer.Info("")
+		printer.Warning("No changes made.")
+		return nil
+	}
+
+	// Create config directory
+	configDir := filepath.Dir(config.DefaultConfigPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
 	// Save configuration
 	if err := cfg.Save(config.DefaultConfigPath); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Printf("Configuration saved to %s\n", config.DefaultConfigPath)
+	printer.Info("Configuration saved to %s", config.DefaultConfigPath)
 
 	// Install systemd timer
 	if err := systemd.Install(cfg.Schedule); err != nil {
@@ -223,14 +337,15 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		nextRun = "(unknown)"
 	}
 
-	fmt.Println("\nSetup complete!")
-	fmt.Printf("  Tag:      %s\n", cfg.Tag)
-	fmt.Printf("  Paths:    %s\n", strings.Join(cfg.Paths, ", "))
-	fmt.Printf("  Schedule: %s\n", cfg.Schedule)
-	fmt.Printf("  Retention: hourly=%d, daily=%d, weekly=%d, monthly=%d, yearly=%d\n",
+	printer.Success("\nSetup complete!")
+	printer.Info("  Tag:      %s", cfg.Tag)
+	printer.Info("  Paths:    %s", strings.Join(cfg.Paths, ", "))
+	printer.Info("  Schedule: %s", cfg.Schedule)
+	printer.Info("  Retention: hourly=%d, daily=%d, weekly=%d, monthly=%d, yearly=%d",
 		cfg.KeepHourly, cfg.KeepDaily, cfg.KeepWeekly, cfg.KeepMonthly, cfg.KeepYearly)
-	fmt.Printf("  Next run: %s\n", strings.TrimSpace(nextRun))
-	fmt.Printf("\nNote: Ensure %s contains RESTIC_REPOSITORY and RESTIC_PASSWORD\n", config.DefaultEnvPath)
+	printer.Info("  Next run: %s", strings.TrimSpace(nextRun))
+	printer.Info("")
+	printer.Warning("Note: Ensure %s contains RESTIC_REPOSITORY and RESTIC_PASSWORD", config.DefaultEnvPath)
 
 	return nil
 }
@@ -258,7 +373,7 @@ func runEdit(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("at least one valid path is required")
 		}
 		for _, w := range warnings {
-			fmt.Fprintln(os.Stderr, w)
+			printer.Warning("Warning: %s", w)
 		}
 		changes = append(changes, fmt.Sprintf("  paths: %s -> %s", strings.Join(cfg.Paths, ","), strings.Join(paths, ",")))
 		cfg.Paths = paths
@@ -311,20 +426,46 @@ func runEdit(cmd *cobra.Command, args []string) error {
 
 	// Check if any changes were made
 	if len(changes) == 0 {
-		fmt.Println("No changes specified. Use flags like --paths, --schedule, --keep-daily, etc.")
+		printer.Info("No changes specified. Use flags like --paths, --schedule, --keep-daily, etc.")
+		return nil
+	}
+
+	// Dry run mode
+	if editDryRun {
+		printer.Header("=== Dry Run Mode ===")
+		printer.Info("")
+		printer.Header("Proposed changes:")
+		for _, change := range changes {
+			printer.Info(change)
+		}
+
+		printer.Info("")
+		printer.Header("Would write to %s:", config.DefaultConfigPath)
+		printer.Info(strings.Repeat("-", 50))
+		fmt.Print(cfg.Content())
+
+		if cfg.Schedule != oldSchedule {
+			printer.Info("")
+			printer.Header("Would write to %s:", systemd.TimerPath)
+			printer.Info(strings.Repeat("-", 50))
+			fmt.Print(systemd.GenerateTimer(cfg.Schedule))
+		}
+
+		printer.Info("")
+		printer.Warning("No changes made.")
 		return nil
 	}
 
 	// Show diff
-	fmt.Println("Proposed changes:")
+	printer.Header("Proposed changes:")
 	for _, change := range changes {
-		fmt.Println(change)
+		printer.Info(change)
 	}
 
 	// Confirm unless --yes is specified
 	if !editYes {
 		if !promptConfirm("\nApply these changes?") {
-			fmt.Println("Cancelled.")
+			printer.Info("Cancelled.")
 			return nil
 		}
 	}
@@ -345,10 +486,10 @@ func runEdit(cmd *cobra.Command, args []string) error {
 		if err := systemd.RestartTimer(); err != nil {
 			return fmt.Errorf("failed to restart timer: %w", err)
 		}
-		fmt.Println("Timer updated and restarted.")
+		printer.Info("Timer updated and restarted.")
 	}
 
-	fmt.Println("Configuration updated successfully.")
+	printer.Success("Configuration updated successfully.")
 	return nil
 }
 
@@ -381,22 +522,23 @@ func runNow(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check repository is accessible
-	fmt.Println("Checking repository connection...")
+	printer.Info("Checking repository connection...")
 	if err := backup.CheckRepository(); err != nil {
 		return fmt.Errorf("cannot connect to repository. Check RESTIC_REPOSITORY and RESTIC_PASSWORD in %s", config.DefaultEnvPath)
 	}
 
 	// Run backup with verbose output
-	fmt.Printf("Starting backup for tag '%s'...\n", cfg.Tag)
-	fmt.Printf("Paths: %s\n\n", strings.Join(cfg.Paths, ", "))
+	printer.Header("Starting backup for tag '%s'...", cfg.Tag)
+	printer.Info("Paths: %s\n", strings.Join(cfg.Paths, ", "))
 
 	runner := backup.NewRunner(cfg)
 	runner.Verbose = true
 	if err := runner.Run(); err != nil {
+		printer.Error("Backup failed!")
 		return fmt.Errorf("backup failed: %w", err)
 	}
 
-	fmt.Println("\nBackup completed successfully!")
+	printer.Success("\nBackup completed successfully!")
 	return nil
 }
 
@@ -413,24 +555,24 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Display configuration
-	fmt.Println("=== Configuration ===")
-	fmt.Printf("  Tag:      %s\n", cfg.Tag)
-	fmt.Printf("  Paths:    %s\n", strings.Join(cfg.Paths, ", "))
-	fmt.Printf("  Schedule: %s\n", cfg.Schedule)
-	fmt.Printf("  Retention: hourly=%d, daily=%d, weekly=%d, monthly=%d, yearly=%d\n",
+	printer.Header("=== Configuration ===")
+	printer.Info("  Tag:      %s", cfg.Tag)
+	printer.Info("  Paths:    %s", strings.Join(cfg.Paths, ", "))
+	printer.Info("  Schedule: %s", cfg.Schedule)
+	printer.Info("  Retention: hourly=%d, daily=%d, weekly=%d, monthly=%d, yearly=%d",
 		cfg.KeepHourly, cfg.KeepDaily, cfg.KeepWeekly, cfg.KeepMonthly, cfg.KeepYearly)
 	if len(cfg.Excludes) > 0 {
-		fmt.Printf("  Excludes: %s\n", strings.Join(cfg.Excludes, ", "))
+		printer.Info("  Excludes: %s", strings.Join(cfg.Excludes, ", "))
 	}
 	if cfg.NotifyURL != "" {
-		fmt.Printf("  Notify:   %s\n", cfg.NotifyURL)
+		printer.Info("  Notify:   %s", cfg.NotifyURL)
 	}
 
 	// Display timer status
-	fmt.Println("\n=== Timer Status ===")
+	printer.Header("\n=== Timer Status ===")
 	timerStatus, err := systemd.TimerStatus()
 	if err != nil {
-		fmt.Println("  Timer not installed or not running")
+		printer.Warning("  Timer not installed or not running")
 	} else {
 		fmt.Println(timerStatus)
 	}
@@ -438,21 +580,21 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// Display next run time
 	nextRun, err := systemd.NextRun()
 	if err == nil && strings.TrimSpace(nextRun) != "" {
-		fmt.Printf("Next scheduled run: %s\n", strings.TrimSpace(nextRun))
+		printer.Info("Next scheduled run: %s", strings.TrimSpace(nextRun))
 	}
 
 	// Display recent snapshots
-	fmt.Println("\n=== Recent Snapshots ===")
+	printer.Header("\n=== Recent Snapshots ===")
 	if err := config.LoadEnv(config.DefaultEnvPath); err != nil {
-		fmt.Printf("  Cannot load environment: %v\n", err)
-		fmt.Printf("  Ensure %s exists with RESTIC_REPOSITORY and RESTIC_PASSWORD\n", config.DefaultEnvPath)
+		printer.Warning("  Cannot load environment: %v", err)
+		printer.Info("  Ensure %s exists with RESTIC_REPOSITORY and RESTIC_PASSWORD", config.DefaultEnvPath)
 		return nil
 	}
 
 	runner := backup.NewRunner(cfg)
 	if err := runner.ListSnapshots(5); err != nil {
-		fmt.Printf("  Cannot list snapshots: %v\n", err)
-		fmt.Println("  Repository may be unreachable or not initialized")
+		printer.Warning("  Cannot list snapshots: %v", err)
+		printer.Info("  Repository may be unreachable or not initialized")
 	}
 
 	return nil
@@ -472,17 +614,110 @@ func runInternal(cmd *cobra.Command, args []string) error {
 
 	// Run the backup
 	runner := backup.NewRunner(cfg)
-	if err := runner.Run(); err != nil {
-		// Log notification URL if configured (actual notification not implemented)
-		if cfg.NotifyURL != "" {
-			fmt.Fprintf(os.Stderr, "Backup failed. Notification URL configured: %s\n", cfg.NotifyURL)
-		}
-		return fmt.Errorf("backup failed: %w", err)
-	}
+	backupErr := runner.Run()
 
+	// Send notification if configured
 	if cfg.NotifyURL != "" {
-		fmt.Printf("Backup completed successfully. Notification URL configured: %s\n", cfg.NotifyURL)
+		notifier := notify.New(cfg.NotifyURL)
+		if backupErr != nil {
+			if notifyErr := notifier.SendFailure(cfg.Tag, backupErr); notifyErr != nil {
+				fmt.Fprintf(os.Stderr, "Failed to send failure notification: %v\n", notifyErr)
+			}
+		} else {
+			// Try to get the latest snapshot ID
+			snapshotID := ""
+			snapshots, listErr := runner.ListSnapshotsJSON(1)
+			if listErr == nil && len(snapshots) > 0 {
+				snapshotID = snapshots[0].ShortID
+			}
+			if notifyErr := notifier.SendSuccess(cfg.Tag, snapshotID); notifyErr != nil {
+				fmt.Fprintf(os.Stderr, "Failed to send success notification: %v\n", notifyErr)
+			}
+		}
 	}
 
+	if backupErr != nil {
+		return fmt.Errorf("backup failed: %w", backupErr)
+	}
+
+	return nil
+}
+
+func runList(cmd *cobra.Command, args []string) error {
+	// Check if configured
+	if !config.Exists(config.DefaultConfigPath) {
+		return fmt.Errorf("not configured. Run 'bak setup' first")
+	}
+
+	// Load environment variables
+	if err := config.LoadEnv(config.DefaultEnvPath); err != nil {
+		return fmt.Errorf("failed to load environment: %w", err)
+	}
+
+	// Load configuration
+	cfg, err := config.Load(config.DefaultConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Get snapshots as JSON
+	runner := backup.NewRunner(cfg)
+	snapshots, err := runner.ListSnapshotsJSON(listLimit)
+	if err != nil {
+		return fmt.Errorf("failed to list snapshots: %w", err)
+	}
+
+	if len(snapshots) == 0 {
+		printer.Warning("No snapshots found for tag '%s'", cfg.Tag)
+		return nil
+	}
+
+	// Print header
+	printer.Header("=== Snapshots for tag '%s' ===", cfg.Tag)
+	printer.Info("%-10s %-20s %s", "ID", "Time", "Paths")
+
+	// Print snapshots
+	for _, s := range snapshots {
+		// Parse and format time
+		timeStr := s.Time
+		if t, err := time.Parse(time.RFC3339Nano, s.Time); err == nil {
+			timeStr = t.Format("2006-01-02 15:04")
+		}
+
+		pathsStr := strings.Join(s.Paths, ", ")
+		if len(pathsStr) > 40 {
+			pathsStr = pathsStr[:37] + "..."
+		}
+
+		printer.Info("%-10s %-20s %s", s.ShortID, timeStr, pathsStr)
+	}
+
+	// Print restore hint
+	printer.Info("")
+	printer.Success("To restore a snapshot:")
+	printer.Info("  restic restore %s --target /path/to/restore", snapshots[0].ShortID)
+
+	return nil
+}
+
+func runLogs(cmd *cobra.Command, args []string) error {
+	execCmd := exec.Command("journalctl", "-u", "backup.service",
+		"--no-pager", "-n", fmt.Sprintf("%d", logsLines))
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+	return execCmd.Run()
+}
+
+func runCompletion(cmd *cobra.Command, args []string) error {
+	switch args[0] {
+	case "bash":
+		return cmd.Root().GenBashCompletion(os.Stdout)
+	case "zsh":
+		return cmd.Root().GenZshCompletion(os.Stdout)
+	case "fish":
+		return cmd.Root().GenFishCompletion(os.Stdout, true)
+	case "powershell":
+		return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+	}
 	return nil
 }
