@@ -142,6 +142,76 @@ This tool is designed for use with:
 - **Server-side retention**: Retention is declared via tags (e.g., `retain:h=24,d=7,w=4,m=6`) and enforced by server-side processes
 - **Pre-configured credentials**: VMs ship with credentials already in `/etc/backup/`
 
+## Development
+
+### Running Tests
+
+```bash
+# Run unit tests
+make test
+
+# Run all tests (unit + integration)
+make test-all
+```
+
+### Integration Tests
+
+Integration tests run in a Docker container with systemd and restic to test the full CLI workflow.
+
+```bash
+# Run integration tests (automated)
+make test-integration
+```
+
+### Manual Testing with Docker
+
+For interactive testing and debugging, you can start the test environment and shell into it:
+
+```bash
+# Build and start the test container
+make test-integration-up
+
+# Shell into the running container
+make test-integration-shell
+```
+
+Inside the container, you have access to:
+- `bak` binary at `/usr/local/bin/bak`
+- `restic` for direct repository inspection
+- Pre-initialized restic repository at `/tmp/restic-repo`
+- Sample test data at `/tmp/backup-source`
+- Environment variables `RESTIC_REPOSITORY` and `RESTIC_PASSWORD` already configured
+
+Example manual test session:
+
+```bash
+# Inside the container
+bak setup --tag manual-test --paths /tmp/backup-source
+bak now
+bak status
+restic snapshots
+
+# Run specific integration tests
+go test -v -tags=integration ./test/integration/... -run TestSetup_BasicConfiguration
+```
+
+When done:
+
+```bash
+# Clean up
+make test-integration-down
+```
+
+Other useful commands:
+
+```bash
+# View test service logs (when running automated tests)
+make test-integration-logs
+
+# Clean up Docker images
+make test-integration-clean
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
