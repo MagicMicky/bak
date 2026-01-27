@@ -111,6 +111,43 @@ make test     # Run tests
 make build    # Verify it builds
 ```
 
+## Versioning and Releases
+
+Releases are automated on merge to `main`. Binaries are built for Linux and macOS (amd64/arm64).
+
+### Version Bumping
+
+By default, merging to main increments the **patch** version (e.g., v1.0.0 → v1.0.1).
+
+To bump **minor** or **major** version, include a tag in the merge commit message:
+
+| Change Type | Tag | Example | When to Use |
+|-------------|-----|---------|-------------|
+| Patch | (default) | v1.0.0 → v1.0.1 | Bug fixes, small improvements |
+| Minor | `[minor]` | v1.0.0 → v1.1.0 | New features, backward-compatible changes |
+| Major | `[major]` | v1.0.0 → v2.0.0 | Breaking changes, major rewrites |
+
+### How to Trigger Version Bumps
+
+Include the tag anywhere in the PR title or merge commit:
+
+```bash
+# Minor version bump
+gh pr create --title "feat: add new backup command [minor]" ...
+
+# Major version bump (breaking change)
+gh pr create --title "refactor: redesign config format [major]" ...
+
+# Patch version (default, no tag needed)
+gh pr create --title "fix: handle empty paths correctly" ...
+```
+
+### Semantic Versioning Guidelines
+
+- **MAJOR**: Incompatible API/CLI changes, config format changes, removed features
+- **MINOR**: New commands, new flags, new features (backward-compatible)
+- **PATCH**: Bug fixes, documentation, internal refactoring
+
 ## Project Context
 
 `bak` is a CLI wrapper for restic backups designed for homelab use. Key points:
