@@ -120,12 +120,11 @@ RemainAfterExit=yes\n\
 WantedBy=multi-user.target\n\
 ' > /etc/systemd/system/init-test-env.service
 
-# Create systemd service for running tests (only when AUTO_RUN_TESTS=1)
+# Create systemd service for running tests (started manually by CI script)
 RUN echo '[Unit]\n\
 Description=Integration Tests\n\
 After=init-test-env.service\n\
 Requires=init-test-env.service\n\
-ConditionEnvironment=AUTO_RUN_TESTS=1\n\
 \n\
 [Service]\n\
 Type=oneshot\n\
@@ -135,13 +134,10 @@ ExecStart=/usr/local/bin/run-tests.sh\n\
 StandardOutput=journal+console\n\
 StandardError=journal+console\n\
 RemainAfterExit=yes\n\
-\n\
-[Install]\n\
-WantedBy=multi-user.target\n\
 ' > /etc/systemd/system/integration-tests.service
 
-# Enable both services
-RUN systemctl enable init-test-env.service integration-tests.service
+# Only enable init service (test service is started manually for CI)
+RUN systemctl enable init-test-env.service
 
 # Use systemd as init
 STOPSIGNAL SIGRTMIN+3

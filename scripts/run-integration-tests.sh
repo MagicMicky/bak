@@ -21,54 +21,59 @@ docker run -d \
     -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
     --tmpfs /run \
     --tmpfs /run/lock \
-    -e AUTO_RUN_TESTS=1 \
     "$IMAGE_NAME"
 
-echo "Waiting for tests to complete..."
-# Follow the test service logs
-docker exec "$CONTAINER_NAME" bash -c '
-    # Wait for systemd to be ready
-    for i in {1..30}; do
-        if systemctl is-system-running --wait 2>/dev/null; then
-            break
-        fi
-        sleep 1
-    done
+echo "Waiting for systemd to be ready..."
+for i in {1..30}; do
+    if docker exec "$CONTAINER_NAME" systemctl is-system-running --wait 2>/dev/null; then
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "Timeout waiting for systemd"
+        docker logs "$CONTAINER_NAME"
+        exit 1
+    fi
+    sleep 1
+done
 
-    # Wait for tests to start and complete
-    echo "Waiting for integration-tests service..."
-    for i in {1..10}; do
-        if systemctl is-active integration-tests.service 2>/dev/null || \
-           systemctl show integration-tests.service --property=ActiveState 2>/dev/null | grep -q "inactive"; then
-            break
-        fi
-        sleep 1
-    done
+echo "Waiting for test environment initialization..."
+for i in {1..30}; do
+    STATUS=$(docker exec "$CONTAINER_NAME" systemctl is-active init-test-env.service 2>/dev/null || echo "unknown")
+    if [ "$STATUS" = "active" ]; then
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "Timeout waiting for init-test-env.service"
+        docker exec "$CONTAINER_NAME" journalctl -u init-test-env.service --no-pager || true
+        exit 1
+    fi
+    sleep 1
+done
 
-    # Follow the journal for test output
-    journalctl -u integration-tests.service -f --no-pager &
-    JOURNAL_PID=$!
+echo "Starting integration tests..."
+docker exec "$CONTAINER_NAME" systemctl start integration-tests.service &
 
-    # Wait for service to complete
-    while systemctl is-active integration-tests.service 2>/dev/null; do
-        sleep 1
-    done
+# Follow the journal for test output
+sleep 2
+docker exec "$CONTAINER_NAME" journalctl -u integration-tests.service -f --no-pager &
+JOURNAL_PID=$!
 
-    kill $JOURNAL_PID 2>/dev/null || true
+# Wait for service to complete
+while docker exec "$CONTAINER_NAME" systemctl is-active integration-tests.service 2>/dev/null | grep -q "^activating\|^active"; do
+    sleep 2
+done
 
-    # Get the exit code
-    EXIT_CODE=$(systemctl show integration-tests.service --property=ExecMainStatus --value)
-    echo ""
-    echo "Test service exit code: $EXIT_CODE"
-    exit ${EXIT_CODE:-1}
-'
+kill $JOURNAL_PID 2>/dev/null || true
 
-EXIT_CODE=$?
+# Get the exit code
+EXIT_CODE=$(docker exec "$CONTAINER_NAME" systemctl show integration-tests.service --property=ExecMainStatus --value 2>/dev/null || echo "1")
 echo ""
-if [ $EXIT_CODE -eq 0 ]; then
+echo "Test service exit code: $EXIT_CODE"
+
+if [ "$EXIT_CODE" = "0" ]; then
     echo "Integration tests PASSED"
 else
     echo "Integration tests FAILED (exit code: $EXIT_CODE)"
 fi
 
-exit $EXIT_CODE
+exit "${EXIT_CODE:-1}"

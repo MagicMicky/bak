@@ -23,7 +23,5 @@ services:
     environment:
       - RESTIC_REPOSITORY=/tmp/restic-repo
       - RESTIC_PASSWORD=test-password
-      # Set AUTO_RUN_TESTS=1 to run tests automatically (used by CI)
-      # Omit or set to 0 for manual testing
     tty: true
     stdin_open: true
