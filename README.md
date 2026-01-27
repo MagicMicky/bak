@@ -14,9 +14,6 @@ A simple CLI wrapper for [restic](https://restic.net/) backups, designed for hom
 ## Prerequisites
 
 - restic installed and available in PATH
-- Credentials pre-configured in `/etc/backup/`:
-  - `env` - Environment variables (RESTIC_REPOSITORY, RESTIC_PASSWORD_FILE, etc.)
-  - `restic-password` - Repository encryption password
 - systemd (for scheduled backups)
 
 ## Installation
@@ -39,9 +36,27 @@ sudo install -m 755 bak /usr/local/bin/bak
 
 ## Usage
 
-### Initial Setup
+### Initialize Credentials
 
-Configure automated backups for this host:
+First, configure repository credentials (one-time per machine):
+
+```bash
+# Interactive mode
+sudo bak init --repo rest:https://user@backup.example.com:8000
+
+# Non-interactive mode
+sudo bak init --repo rest:https://user@backup.example.com:8000 --password "secret"
+
+# Using environment variables
+sudo RESTIC_REPOSITORY=rest:https://... RESTIC_PASSWORD=secret bak init
+
+# Preview changes without writing
+sudo bak init --repo ... --password ... --dry-run
+```
+
+### Configure Backups
+
+After credentials are set up, configure automated backups:
 
 ```bash
 sudo bak setup --tag webapp --paths /var/www,/etc/nginx
@@ -85,10 +100,23 @@ sudo bak edit --paths /var/www,/etc/nginx,/opt/certs
 
 | Command | Description |
 |---------|-------------|
+| `init` | Initialize repository credentials (one-time per machine) |
 | `setup` | Configure automated backups (creates config + systemd timer) |
 | `now` | Run backup immediately |
 | `status` | Show configuration and recent snapshots |
 | `edit` | Modify existing configuration |
+| `list` | List snapshots with detailed information |
+| `logs` | Show recent backup logs from journald |
+| `completion` | Generate shell completion scripts (bash, zsh, fish, powershell) |
+
+## Init Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--repo` | `$RESTIC_REPOSITORY` | Repository URL (prompted if not provided) |
+| `--password` | `$RESTIC_PASSWORD` | Repository password (prompted if not provided) |
+| `--force` | `false` | Overwrite existing credentials |
+| `--dry-run` | `false` | Preview changes without writing |
 
 ## Setup Options
 
@@ -105,18 +133,66 @@ sudo bak edit --paths /var/www,/etc/nginx,/opt/certs
 | `--exclude` | | Exclude pattern (repeatable) |
 | `--notify` | | Apprise notification URL |
 | `--force` | `false` | Overwrite existing configuration |
+| `--dry-run` | `false` | Preview changes without writing |
+
+## Edit Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--paths` | | Update backup paths |
+| `--schedule` | | Update schedule |
+| `--keep-hourly` | | Update hourly retention |
+| `--keep-daily` | | Update daily retention |
+| `--keep-weekly` | | Update weekly retention |
+| `--keep-monthly` | | Update monthly retention |
+| `--keep-yearly` | | Update yearly retention |
+| `--exclude` | | Update exclude patterns |
+| `--notify` | | Update notification URL |
+| `--yes` | `false` | Skip confirmation prompt |
+| `--dry-run` | `false` | Preview changes without writing |
+
+## List Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-n`, `--last` | `10` | Number of snapshots to show |
+
+## Logs Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-n`, `--lines` | `20` | Number of log lines to show |
+
+## Shell Completion
+
+Generate and load shell completions:
+
+```bash
+# Bash (add to ~/.bashrc)
+eval "$(bak completion bash)"
+
+# Zsh (add to ~/.zshrc)
+eval "$(bak completion zsh)"
+
+# Fish
+bak completion fish > ~/.config/fish/completions/bak.fish
+```
 
 ## Configuration Files
 
 ### `/etc/backup/env`
 
-Environment variables for restic:
+Environment variables for restic (created by `bak init`):
 
 ```bash
-RESTIC_REPOSITORY="rest:https://user:pass@backups.example.com/"
+RESTIC_REPOSITORY="rest:https://user@backups.example.com/"
 RESTIC_PASSWORD_FILE="/etc/backup/restic-password"
 RESTIC_CACHE_DIR="/var/cache/restic"
 ```
+
+### `/etc/backup/restic-password`
+
+Repository encryption password (created by `bak init`, mode 0600).
 
 ### `/etc/backup/backup.conf`
 
@@ -140,7 +216,7 @@ This tool is designed for use with:
 
 - **Append-only backup server**: Clients cannot delete snapshots
 - **Server-side retention**: Retention is declared via tags (e.g., `retain:h=24,d=7,w=4,m=6`) and enforced by server-side processes
-- **Pre-configured credentials**: VMs ship with credentials already in `/etc/backup/`
+- **Credential management**: Use `bak init` to configure credentials, or pre-provision `/etc/backup/` for automated deployments
 
 ## License
 
