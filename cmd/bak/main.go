@@ -283,6 +283,11 @@ func parsePaths(pathsStr string) ([]string, []string) {
 		if p == "" {
 			continue
 		}
+		// Resolve to absolute path so backups work when run by the
+		// scheduler from a different working directory
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
 		validPaths = append(validPaths, p)
 		if _, err := os.Stat(p); os.IsNotExist(err) {
 			warnings = append(warnings, fmt.Sprintf("path does not exist: %s", p))
