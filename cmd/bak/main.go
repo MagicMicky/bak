@@ -849,7 +849,7 @@ func runDisable(cmd *cobra.Command, args []string) error {
 	if disableDryRun {
 		printer.Header("=== Dry Run Mode ===")
 		printer.Info("")
-		printer.Info("Would remove scheduled backup task")
+		fmt.Println(sched.DryRunUninstallInfo())
 		printer.Info("")
 		printer.Info("Files preserved:")
 		printer.Info("  %s (config)", config.DefaultConfigPath)
@@ -904,10 +904,10 @@ func runEnable(cmd *cobra.Command, args []string) error {
 
 		printer.Header("=== Dry Run Mode ===")
 		printer.Info("")
-		printer.Info("Would install scheduled task from existing config:")
-		printer.Info("  Tag:      %s", cfg.Tag)
-		printer.Info("  Paths:    %s", strings.Join(cfg.Paths, ", "))
-		printer.Info("  Schedule: %s", cfg.Schedule)
+
+		printer.Header("Existing config at %s:", config.DefaultConfigPath)
+		printer.Info(strings.Repeat("-", 50))
+		fmt.Print(cfg.Content())
 
 		for _, f := range sched.DryRunInfo(cfg.Schedule, binaryPath) {
 			printer.Info("")
@@ -958,7 +958,8 @@ func runReset(cmd *cobra.Command, args []string) error {
 		printer.Header("=== Dry Run Mode ===")
 		printer.Info("")
 		if hasSchedule {
-			printer.Info("Would remove: scheduled backup task")
+			fmt.Println(sched.DryRunUninstallInfo())
+			printer.Info("")
 		}
 		if hasConfig {
 			printer.Info("Would remove: %s", config.DefaultConfigPath)
@@ -1089,7 +1090,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Dry run mode
 	if initDryRun {
-		printer.Header("\n=== Dry Run Mode ===")
+		printer.Header("=== Dry Run Mode ===")
 		printer.Info("")
 		printer.Header("Would write to %s:", config.DefaultEnvPath)
 		printer.Info(strings.Repeat("-", 50))

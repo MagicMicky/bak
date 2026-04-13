@@ -17,6 +17,8 @@ type Scheduler interface {
 	ViewLogs(lines int) error
 	// DryRunInfo returns file paths and contents that would be written during install.
 	DryRunInfo(schedule, binaryPath string) []DryRunFile
+	// DryRunUninstallInfo returns a description of what uninstall would do.
+	DryRunUninstallInfo() string
 	// DefaultBinaryPath returns the platform default installation path for bak.
 	DefaultBinaryPath() string
 }
