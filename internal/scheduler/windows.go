@@ -52,16 +52,13 @@ func (s *windowsScheduler) Install(schedule string) error {
 }
 
 func (s *windowsScheduler) Uninstall() error {
-	if err := exec.Command("schtasks", "/Delete", "/TN", taskName, "/F").Run(); err != nil {
-		return fmt.Errorf("failed to delete scheduled task: %w", err)
-	}
+	// Ignore errors (task may not exist), matching systemd behavior
+	exec.Command("schtasks", "/Delete", "/TN", taskName, "/F").Run()
 	return nil
 }
 
 func (s *windowsScheduler) UpdateSchedule(schedule string) error {
-	if err := s.Uninstall(); err != nil {
-		return fmt.Errorf("failed to remove old task: %w", err)
-	}
+	// Install uses /F flag which overwrites the existing task
 	return s.Install(schedule)
 }
 

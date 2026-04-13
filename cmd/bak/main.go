@@ -59,7 +59,7 @@ var (
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Configure automated backups for this host",
-	Long: `Configure automated backups by creating a config file and systemd timer.
+	Long: `Configure automated backups by creating a config file and scheduled task.
 
 Example:
   sudo bak setup --tag webapp --paths /var/www,/etc/nginx
@@ -110,13 +110,13 @@ Use --verbose to show each file being processed.`,
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show configuration and recent snapshots",
-	Long:  `Display current configuration, systemd timer status, and recent snapshots.`,
+	Long:  `Display current configuration, scheduled task status, and recent snapshots.`,
 	RunE:  runStatus,
 }
 
 var runInternalCmd = &cobra.Command{
 	Use:    "run-internal",
-	Short:  "Internal command called by systemd (not for direct use)",
+	Short:  "Internal command called by scheduler (not for direct use)",
 	Hidden: true,
 	RunE:   runInternal,
 }
@@ -144,8 +144,8 @@ var (
 
 var logsCmd = &cobra.Command{
 	Use:   "logs",
-	Short: "Show recent backup logs from journald",
-	Long:  `Display recent backup service logs from systemd journal.`,
+	Short: "Show recent backup logs",
+	Long:  `Display recent backup service logs.`,
 	RunE:  runLogs,
 }
 

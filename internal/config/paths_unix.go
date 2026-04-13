@@ -2,7 +2,7 @@
 
 package config
 
-const (
+var (
 	// DefaultConfigDir is the default directory for backup configuration files.
 	DefaultConfigDir = "/etc/backup"
 	// DefaultConfigPath is the default location for the backup configuration.
