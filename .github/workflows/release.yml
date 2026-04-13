@@ -74,6 +74,8 @@ jobs:
             goarch: amd64
           - goos: darwin
             goarch: arm64
+          - goos: windows
+            goarch: amd64
     steps:
       - uses: actions/checkout@v4
         with:
@@ -91,8 +93,11 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           output="bak-${{ needs.release.outputs.tag }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            output="${output}.exe"
+          fi
           go build -ldflags "-X main.version=${{ needs.release.outputs.version }}" -o "$output" ./cmd/bak
-          chmod +x "$output"
+          chmod +x "$output" 2>/dev/null || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
