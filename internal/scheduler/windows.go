@@ -3,6 +3,7 @@
 package scheduler
 
 import (
+	"bufio"
 	"fmt"
 	"math/rand"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/magicmicky/bak/internal/config"
 )
 
 const (
@@ -28,6 +31,16 @@ func (s *windowsScheduler) DefaultBinaryPath() string {
 	return windowsBinPath
 }
 
+// logPath returns the path to the backup log file.
+func logPath() string {
+	return filepath.Join(config.DefaultConfigDir, "backup.log")
+}
+
+// taskCommand returns the /TR value that wraps bak with output redirection.
+func taskCommand(binaryPath string) string {
+	return fmt.Sprintf(`cmd /c ""%s" run-internal >> "%s" 2>&1"`, binaryPath, logPath())
+}
+
 func (s *windowsScheduler) Install(schedule string) error {
 	binaryPath, err := os.Executable()
 	if err != nil {
@@ -40,7 +53,7 @@ func (s *windowsScheduler) Install(schedule string) error {
 		return err
 	}
 
-	cmdArgs := []string{"/Create", "/TN", taskName, "/TR", fmt.Sprintf(`"%s" run-internal`, binaryPath)}
+	cmdArgs := []string{"/Create", "/TN", taskName, "/TR", taskCommand(binaryPath)}
 	cmdArgs = append(cmdArgs, args...)
 	// /F: overwrite existing task, /RL HIGHEST: run with elevated privileges,
 	// /RU SYSTEM: run as SYSTEM so backups execute even when no user is logged in
@@ -94,7 +107,37 @@ func (s *windowsScheduler) NextRun() (string, error) {
 }
 
 func (s *windowsScheduler) ViewLogs(lines int) error {
-	return fmt.Errorf("logs command is not yet supported on Windows; check Windows Event Viewer for backup task output")
+	log := logPath()
+	if _, err := os.Stat(log); os.IsNotExist(err) {
+		return fmt.Errorf("no backup logs found at %s\nRun a backup first with 'bak now' or wait for the scheduled task", log)
+	}
+
+	// Read the last N lines from the log file
+	file, err := os.Open(log)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+	defer file.Close()
+
+	var allLines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		allLines = append(allLines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to read log file: %w", err)
+	}
+
+	// Show last N lines
+	start := 0
+	if len(allLines) > lines {
+		start = len(allLines) - lines
+	}
+	for _, line := range allLines[start:] {
+		fmt.Println(line)
+	}
+
+	return nil
 }
 
 func (s *windowsScheduler) DryRunInfo(schedule, binaryPath string) []DryRunFile {
@@ -107,14 +150,14 @@ func (s *windowsScheduler) DryRunInfo(schedule, binaryPath string) []DryRunFile 
 		args = []string{fmt.Sprintf("<error: %s>", err)}
 	}
 
-	cmdArgs := []string{"schtasks", "/Create", "/TN", taskName, "/TR", fmt.Sprintf(`"%s" run-internal`, binaryPath)}
+	cmdArgs := []string{"schtasks", "/Create", "/TN", taskName, "/TR", taskCommand(binaryPath)}
 	cmdArgs = append(cmdArgs, args...)
 	cmdArgs = append(cmdArgs, "/F", "/RL", "HIGHEST", "/RU", "SYSTEM")
 
 	return []DryRunFile{
 		{
 			Path:    "Windows Task Scheduler",
-			Content: fmt.Sprintf("Command: %s\n", strings.Join(cmdArgs, " ")),
+			Content: fmt.Sprintf("Command: %s\n\nLogs: %s\n", strings.Join(cmdArgs, " "), logPath()),
 		},
 	}
 }
