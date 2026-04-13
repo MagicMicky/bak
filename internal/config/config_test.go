@@ -277,3 +277,81 @@ func TestCredentialsExist(t *testing.T) {
 		t.Error("Expected password file to exist")
 	}
 }
+
+func TestRemoveConfig(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "backup.conf")
+
+	// Create a config file
+	cfg := &Config{
+		Tag:      "test",
+		Paths:    []string{"/tmp"},
+		Schedule: "daily",
+	}
+	if err := cfg.Save(configPath); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	if !Exists(configPath) {
+		t.Fatal("config file should exist after save")
+	}
+
+	// Remove it
+	if err := os.Remove(configPath); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+
+	if Exists(configPath) {
+		t.Error("config file should not exist after remove")
+	}
+}
+
+func TestRemoveConfigDir(t *testing.T) {
+	t.Parallel()
+
+	// Test removing an empty directory
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, "empty")
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+
+	entries, _ := os.ReadDir(subDir)
+	if len(entries) != 0 {
+		t.Fatal("directory should be empty")
+	}
+
+	if err := os.Remove(subDir); err != nil {
+		t.Fatalf("Remove empty dir error = %v", err)
+	}
+
+	if Exists(subDir) {
+		t.Error("empty directory should be removed")
+	}
+
+	// Test that non-empty directory is preserved
+	subDir2 := filepath.Join(tmpDir, "notempty")
+	if err := os.Mkdir(subDir2, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir2, "keep.txt"), []byte("data"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	entries, _ = os.ReadDir(subDir2)
+	if len(entries) == 0 {
+		t.Fatal("directory should not be empty")
+	}
+
+	// os.Remove on non-empty dir should fail
+	err := os.Remove(subDir2)
+	if err == nil {
+		t.Error("Remove non-empty dir should fail")
+	}
+
+	if !Exists(subDir2) {
+		t.Error("non-empty directory should be preserved")
+	}
+}

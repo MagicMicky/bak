@@ -134,6 +134,18 @@ var listCmd = &cobra.Command{
 // Logs command flags
 var logsLines int
 
+// Disable command flags
+var (
+	disableYes    bool
+	disableDryRun bool
+)
+
+// Reset command flags
+var (
+	resetYes    bool
+	resetDryRun bool
+)
+
 // Init command flags
 var (
 	initRepo     string
@@ -147,6 +159,32 @@ var logsCmd = &cobra.Command{
 	Short: "Show recent backup logs",
 	Long:  `Display recent backup service logs.`,
 	RunE:  runLogs,
+}
+
+var disableCmd = &cobra.Command{
+	Use:   "disable",
+	Short: "Remove the scheduled backup task",
+	Long: `Remove the scheduled backup task while keeping configuration and credentials.
+You can still run backups manually with 'bak now'.
+Re-enable by running 'bak setup --force' again.
+
+Example:
+  sudo bak disable
+  bak disable --dry-run`,
+	RunE: runDisable,
+}
+
+var resetCmd = &cobra.Command{
+	Use:   "reset",
+	Short: "Remove all bak configuration from this machine",
+	Long: `Remove the scheduled task, configuration, and credentials.
+This fully undoes 'bak init' and 'bak setup'. Your backups in the
+restic repository are NOT affected.
+
+Example:
+  sudo bak reset
+  bak reset --dry-run`,
+	RunE: runReset,
 }
 
 var completionCmd = &cobra.Command{
@@ -251,6 +289,14 @@ func init() {
 	initCmd.Flags().BoolVar(&initForce, "force", false, "Overwrite existing credentials")
 	initCmd.Flags().BoolVar(&initDryRun, "dry-run", false, "Show what would be written without making changes")
 
+	// Disable command flags
+	disableCmd.Flags().BoolVar(&disableYes, "yes", false, "Skip confirmation prompt")
+	disableCmd.Flags().BoolVar(&disableDryRun, "dry-run", false, "Show what would be removed without making changes")
+
+	// Reset command flags
+	resetCmd.Flags().BoolVar(&resetYes, "yes", false, "Skip confirmation prompt")
+	resetCmd.Flags().BoolVar(&resetDryRun, "dry-run", false, "Show what would be removed without making changes")
+
 	// Add commands to root
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(setupCmd)
@@ -260,6 +306,8 @@ func init() {
 	rootCmd.AddCommand(runInternalCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(logsCmd)
+	rootCmd.AddCommand(disableCmd)
+	rootCmd.AddCommand(resetCmd)
 	rootCmd.AddCommand(completionCmd)
 }
 
@@ -775,6 +823,136 @@ func runList(cmd *cobra.Command, args []string) error {
 
 func runLogs(cmd *cobra.Command, args []string) error {
 	return sched.ViewLogs(logsLines)
+}
+
+func runDisable(cmd *cobra.Command, args []string) error {
+	// Dry run mode
+	if disableDryRun {
+		printer.Header("=== Dry Run Mode ===")
+		printer.Info("")
+		printer.Info("Would remove scheduled backup task")
+		printer.Info("")
+		printer.Info("Files preserved:")
+		printer.Info("  %s (config)", config.DefaultConfigPath)
+		printer.Info("  %s (credentials)", config.DefaultEnvPath)
+		printer.Info("  %s (password)", config.DefaultPasswordPath)
+		printer.Info("")
+		printer.Warning("No changes made.")
+		return nil
+	}
+
+	// Confirm
+	if !disableYes {
+		printer.Warning("This will remove the scheduled backup task.")
+		printer.Info("Configuration and credentials will be preserved.")
+		printer.Info("You can still run backups manually with 'bak now'.")
+		if !promptConfirm("\nProceed?") {
+			printer.Info("Cancelled.")
+			return nil
+		}
+	}
+
+	// Remove scheduled task
+	if err := sched.Uninstall(); err != nil {
+		return fmt.Errorf("failed to remove scheduled task: %w", err)
+	}
+
+	printer.Success("Scheduled backup task removed.")
+	printer.Info("Configuration preserved at %s", config.DefaultConfigPath)
+	printer.Info("Re-enable with: bak setup --force --tag <tag> --paths <paths>")
+	return nil
+}
+
+func runReset(cmd *cobra.Command, args []string) error {
+	// Check what exists
+	hasSchedule := true
+	if _, err := sched.Status(); err != nil {
+		hasSchedule = false
+	}
+	hasConfig := config.Exists(config.DefaultConfigPath)
+	hasCredentials := config.CredentialsExist()
+
+	if !hasSchedule && !hasConfig && !hasCredentials {
+		printer.Info("Nothing to remove. bak is not configured on this machine.")
+		return nil
+	}
+
+	// Dry run mode
+	if resetDryRun {
+		printer.Header("=== Dry Run Mode ===")
+		printer.Info("")
+		if hasSchedule {
+			printer.Info("Would remove: scheduled backup task")
+		}
+		if hasConfig {
+			printer.Info("Would remove: %s", config.DefaultConfigPath)
+		}
+		if hasCredentials {
+			if config.Exists(config.DefaultEnvPath) {
+				printer.Info("Would remove: %s", config.DefaultEnvPath)
+			}
+			if config.Exists(config.DefaultPasswordPath) {
+				printer.Info("Would remove: %s", config.DefaultPasswordPath)
+			}
+		}
+		printer.Info("")
+		printer.Warning("No changes made.")
+		return nil
+	}
+
+	// Confirm
+	if !resetYes {
+		printer.Warning("This will remove ALL bak configuration from this machine:")
+		if hasSchedule {
+			printer.Info("  - Scheduled backup task")
+		}
+		if hasConfig {
+			printer.Info("  - Configuration: %s", config.DefaultConfigPath)
+		}
+		if hasCredentials {
+			printer.Info("  - Credentials: %s, %s", config.DefaultEnvPath, config.DefaultPasswordPath)
+		}
+		printer.Info("")
+		printer.Info("Your backups in the restic repository are NOT affected.")
+		if !promptConfirm("\nProceed?") {
+			printer.Info("Cancelled.")
+			return nil
+		}
+	}
+
+	// Remove scheduled task
+	if hasSchedule {
+		if err := sched.Uninstall(); err != nil {
+			printer.Warning("Failed to remove scheduled task: %v", err)
+		} else {
+			printer.Success("Scheduled task removed.")
+		}
+	}
+
+	// Remove config
+	if hasConfig {
+		if err := config.RemoveConfig(); err != nil {
+			printer.Warning("Failed to remove config: %v", err)
+		} else {
+			printer.Success("Configuration removed.")
+		}
+	}
+
+	// Remove credentials
+	if hasCredentials {
+		if err := config.RemoveCredentials(); err != nil {
+			printer.Warning("Failed to remove credentials: %v", err)
+		} else {
+			printer.Success("Credentials removed.")
+		}
+	}
+
+	// Try to remove config directory if empty
+	config.RemoveConfigDir()
+
+	printer.Info("")
+	printer.Success("Reset complete. bak is no longer configured on this machine.")
+	return nil
 }
 
 func runCompletion(cmd *cobra.Command, args []string) error {
