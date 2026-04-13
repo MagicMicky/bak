@@ -178,6 +178,47 @@ func CredentialsExist() bool {
 	return Exists(DefaultEnvPath) || Exists(DefaultPasswordPath)
 }
 
+// RemoveCredentials deletes the credential files (env and password).
+func RemoveCredentials() error {
+	var errs []string
+	if Exists(DefaultPasswordPath) {
+		if err := os.Remove(DefaultPasswordPath); err != nil {
+			errs = append(errs, fmt.Sprintf("password file: %v", err))
+		}
+	}
+	if Exists(DefaultEnvPath) {
+		if err := os.Remove(DefaultEnvPath); err != nil {
+			errs = append(errs, fmt.Sprintf("env file: %v", err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to remove credentials: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// RemoveConfig deletes the backup configuration file.
+func RemoveConfig() error {
+	if Exists(DefaultConfigPath) {
+		if err := os.Remove(DefaultConfigPath); err != nil {
+			return fmt.Errorf("failed to remove config: %w", err)
+		}
+	}
+	return nil
+}
+
+// RemoveConfigDir removes the configuration directory if it is empty.
+func RemoveConfigDir() error {
+	entries, err := os.ReadDir(DefaultConfigDir)
+	if err != nil {
+		return nil // directory doesn't exist, nothing to do
+	}
+	if len(entries) == 0 {
+		return os.Remove(DefaultConfigDir)
+	}
+	return nil
+}
+
 // LoadEnv loads environment variables from the env file
 func LoadEnv(path string) error {
 	file, err := os.Open(path)
