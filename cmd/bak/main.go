@@ -140,6 +140,9 @@ var (
 	disableDryRun bool
 )
 
+// Enable command flags
+var enableDryRun bool
+
 // Reset command flags
 var (
 	resetYes    bool
@@ -166,12 +169,24 @@ var disableCmd = &cobra.Command{
 	Short: "Remove the scheduled backup task",
 	Long: `Remove the scheduled backup task while keeping configuration and credentials.
 You can still run backups manually with 'bak now'.
-Re-enable by running 'bak setup --force' again.
+Re-enable with 'bak enable'.
 
 Example:
   sudo bak disable
   bak disable --dry-run`,
 	RunE: runDisable,
+}
+
+var enableCmd = &cobra.Command{
+	Use:   "enable",
+	Short: "Re-enable the scheduled backup task from existing config",
+	Long: `Reinstall the scheduled backup task using the existing configuration.
+Use this after 'bak disable' to resume automated backups.
+
+Example:
+  sudo bak enable
+  bak enable --dry-run`,
+	RunE: runEnable,
 }
 
 var resetCmd = &cobra.Command{
@@ -293,6 +308,9 @@ func init() {
 	disableCmd.Flags().BoolVar(&disableYes, "yes", false, "Skip confirmation prompt")
 	disableCmd.Flags().BoolVar(&disableDryRun, "dry-run", false, "Show what would be removed without making changes")
 
+	// Enable command flags
+	enableCmd.Flags().BoolVar(&enableDryRun, "dry-run", false, "Show what would be created without making changes")
+
 	// Reset command flags
 	resetCmd.Flags().BoolVar(&resetYes, "yes", false, "Skip confirmation prompt")
 	resetCmd.Flags().BoolVar(&resetDryRun, "dry-run", false, "Show what would be removed without making changes")
@@ -307,6 +325,7 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(disableCmd)
+	rootCmd.AddCommand(enableCmd)
 	rootCmd.AddCommand(resetCmd)
 	rootCmd.AddCommand(completionCmd)
 }
@@ -859,7 +878,64 @@ func runDisable(cmd *cobra.Command, args []string) error {
 
 	printer.Success("Scheduled backup task removed.")
 	printer.Info("Configuration preserved at %s", config.DefaultConfigPath)
-	printer.Info("Re-enable with: bak setup --force --tag <tag> --paths <paths>")
+	printer.Info("Re-enable with: bak enable")
+	return nil
+}
+
+func runEnable(cmd *cobra.Command, args []string) error {
+	// Check if configured
+	if !config.Exists(config.DefaultConfigPath) {
+		return fmt.Errorf("not configured. Run 'bak setup' first")
+	}
+
+	// Load configuration
+	cfg, err := config.Load(config.DefaultConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Dry run mode
+	if enableDryRun {
+		binaryPath, err := os.Executable()
+		if err != nil {
+			binaryPath = sched.DefaultBinaryPath()
+		}
+		binaryPath, _ = filepath.Abs(binaryPath)
+
+		printer.Header("=== Dry Run Mode ===")
+		printer.Info("")
+		printer.Info("Would install scheduled task from existing config:")
+		printer.Info("  Tag:      %s", cfg.Tag)
+		printer.Info("  Paths:    %s", strings.Join(cfg.Paths, ", "))
+		printer.Info("  Schedule: %s", cfg.Schedule)
+
+		for _, f := range sched.DryRunInfo(cfg.Schedule, binaryPath) {
+			printer.Info("")
+			printer.Header("Would write to %s:", f.Path)
+			printer.Info(strings.Repeat("-", 50))
+			fmt.Print(f.Content)
+		}
+
+		printer.Info("")
+		printer.Warning("No changes made.")
+		return nil
+	}
+
+	// Install scheduled task
+	if err := sched.Install(cfg.Schedule); err != nil {
+		return fmt.Errorf("failed to install scheduled task: %w", err)
+	}
+
+	// Get next run time
+	nextRun, err := sched.NextRun()
+	if err != nil {
+		nextRun = "(unknown)"
+	}
+
+	printer.Success("Scheduled backup task enabled!")
+	printer.Info("  Tag:      %s", cfg.Tag)
+	printer.Info("  Schedule: %s", cfg.Schedule)
+	printer.Info("  Next run: %s", strings.TrimSpace(nextRun))
 	return nil
 }
 

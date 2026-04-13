@@ -83,6 +83,12 @@ func TestTaskCommand(t *testing.T) {
 	if !strings.HasPrefix(cmd, `cmd /c`) {
 		t.Error("taskCommand should start with cmd /c")
 	}
+	if !strings.Contains(cmd, "%DATE%") || !strings.Contains(cmd, "%TIME%") {
+		t.Error("taskCommand missing timestamp header with %%DATE%% and %%TIME%%")
+	}
+	if !strings.Contains(cmd, "echo ===") {
+		t.Error("taskCommand missing echo timestamp separator")
+	}
 }
 
 func TestWindowsDryRunInfo(t *testing.T) {
