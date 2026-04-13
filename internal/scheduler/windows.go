@@ -54,9 +54,16 @@ func (s *windowsScheduler) Install(schedule string) error {
 }
 
 func (s *windowsScheduler) Uninstall() error {
-	// Ignore errors (task may not exist), matching systemd behavior
-	exec.Command("schtasks", "/Delete", "/TN", taskName, "/F").Run()
-	return nil
+	// Ignore "task not found" errors, matching systemd behavior
+	out, err := exec.Command("schtasks", "/Delete", "/TN", taskName, "/F").CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	output := strings.ToLower(string(out))
+	if strings.Contains(output, "cannot find the file") {
+		return nil
+	}
+	return fmt.Errorf("failed to delete scheduled task: %w: %s", err, strings.TrimSpace(string(out)))
 }
 
 func (s *windowsScheduler) UpdateSchedule(schedule string) error {
@@ -70,16 +77,17 @@ func (s *windowsScheduler) Status() (string, error) {
 }
 
 func (s *windowsScheduler) NextRun() (string, error) {
-	out, err := exec.Command("schtasks", "/Query", "/TN", taskName, "/FO", "LIST").CombinedOutput()
+	// Use CSV format for locale-independent parsing (column order is fixed)
+	out, err := exec.Command("schtasks", "/Query", "/TN", taskName, "/FO", "CSV", "/NH").CombinedOutput()
 	if err != nil {
 		return "", err
 	}
 
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Next Run Time:") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "Next Run Time:")), nil
-		}
+	// CSV columns: "TaskName","Next Run Time","Status"
+	line := strings.TrimSpace(string(out))
+	fields := strings.Split(line, ",")
+	if len(fields) >= 2 {
+		return strings.Trim(fields[1], `"`), nil
 	}
 
 	return "", fmt.Errorf("could not determine next run time")
@@ -121,7 +129,8 @@ func scheduleArgs(schedule string) ([]string, error) {
 		minute := r.Intn(60)
 		return []string{"/SC", "DAILY", "/ST", fmt.Sprintf("%02d:%02d", hour, minute)}, nil
 	case "hourly":
-		return []string{"/SC", "HOURLY"}, nil
+		minute := r.Intn(60)
+		return []string{"/SC", "HOURLY", "/MO", "1", "/ST", fmt.Sprintf("00:%02d", minute)}, nil
 	default:
 		return nil, fmt.Errorf("custom schedule %q is not supported on Windows; use 'daily' or 'hourly'", schedule)
 	}
