@@ -78,3 +78,9 @@ jobs:
 
       - name: Verify binary
         run: ./bak --help
+
+      - name: Cross-compile for Windows
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: go build -o bak.exe ./cmd/bak

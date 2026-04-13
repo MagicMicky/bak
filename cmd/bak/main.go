@@ -13,7 +13,7 @@ import (
 	"github.com/magicmicky/bak/internal/backup"
 	"github.com/magicmicky/bak/internal/config"
 	"github.com/magicmicky/bak/internal/notify"
-	"github.com/magicmicky/bak/internal/systemd"
+	"github.com/magicmicky/bak/internal/scheduler"
 	"github.com/magicmicky/bak/internal/ui"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -23,6 +23,9 @@ var version = "dev"
 
 // Global printer for colored output
 var printer = ui.Default()
+
+// Global scheduler for platform-specific task management
+var sched = scheduler.New()
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
@@ -56,7 +59,7 @@ var (
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Configure automated backups for this host",
-	Long: `Configure automated backups by creating a config file and systemd timer.
+	Long: `Configure automated backups by creating a config file and scheduled task.
 
 Example:
   sudo bak setup --tag webapp --paths /var/www,/etc/nginx
@@ -107,13 +110,13 @@ Use --verbose to show each file being processed.`,
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show configuration and recent snapshots",
-	Long:  `Display current configuration, systemd timer status, and recent snapshots.`,
+	Long:  `Display current configuration, scheduled task status, and recent snapshots.`,
 	RunE:  runStatus,
 }
 
 var runInternalCmd = &cobra.Command{
 	Use:    "run-internal",
-	Short:  "Internal command called by systemd (not for direct use)",
+	Short:  "Internal command called by scheduler (not for direct use)",
 	Hidden: true,
 	RunE:   runInternal,
 }
@@ -141,8 +144,8 @@ var (
 
 var logsCmd = &cobra.Command{
 	Use:   "logs",
-	Short: "Show recent backup logs from journald",
-	Long:  `Display recent backup service logs from systemd journal.`,
+	Short: "Show recent backup logs",
+	Long:  `Display recent backup service logs.`,
 	RunE:  runLogs,
 }
 
@@ -332,7 +335,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		// Find the binary path for service generation
 		binaryPath, err := os.Executable()
 		if err != nil {
-			binaryPath = systemd.BinaryPath
+			binaryPath = sched.DefaultBinaryPath()
 		}
 		binaryPath, _ = filepath.Abs(binaryPath)
 
@@ -340,15 +343,12 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		printer.Info(strings.Repeat("-", 50))
 		fmt.Print(cfg.Content())
 
-		printer.Info("")
-		printer.Header("Would write to %s:", systemd.ServicePath)
-		printer.Info(strings.Repeat("-", 50))
-		fmt.Print(systemd.GenerateService(binaryPath))
-
-		printer.Info("")
-		printer.Header("Would write to %s:", systemd.TimerPath)
-		printer.Info(strings.Repeat("-", 50))
-		fmt.Print(systemd.GenerateTimer(cfg.Schedule))
+		for _, f := range sched.DryRunInfo(cfg.Schedule, binaryPath) {
+			printer.Info("")
+			printer.Header("Would write to %s:", f.Path)
+			printer.Info(strings.Repeat("-", 50))
+			fmt.Print(f.Content)
+		}
 
 		printer.Info("")
 		printer.Warning("No changes made.")
@@ -368,13 +368,13 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	printer.Info("Configuration saved to %s", config.DefaultConfigPath)
 
-	// Install systemd timer
-	if err := systemd.Install(cfg.Schedule); err != nil {
-		return fmt.Errorf("failed to install systemd timer: %w", err)
+	// Install scheduled task
+	if err := sched.Install(cfg.Schedule); err != nil {
+		return fmt.Errorf("failed to install scheduled task: %w", err)
 	}
 
 	// Get next run time
-	nextRun, err := systemd.NextRun()
+	nextRun, err := sched.NextRun()
 	if err != nil {
 		nextRun = "(unknown)"
 	}
@@ -487,10 +487,12 @@ func runEdit(cmd *cobra.Command, args []string) error {
 		fmt.Print(cfg.Content())
 
 		if cfg.Schedule != oldSchedule {
-			printer.Info("")
-			printer.Header("Would write to %s:", systemd.TimerPath)
-			printer.Info(strings.Repeat("-", 50))
-			fmt.Print(systemd.GenerateTimer(cfg.Schedule))
+			for _, f := range sched.DryRunInfo(cfg.Schedule, "") {
+				printer.Info("")
+				printer.Header("Would write to %s:", f.Path)
+				printer.Info(strings.Repeat("-", 50))
+				fmt.Print(f.Content)
+			}
 		}
 
 		printer.Info("")
@@ -517,18 +519,12 @@ func runEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	// If schedule changed, update the timer
+	// If schedule changed, update the scheduled task
 	if cfg.Schedule != oldSchedule {
-		if err := systemd.WriteTimer(cfg.Schedule); err != nil {
-			return fmt.Errorf("failed to update timer: %w", err)
+		if err := sched.UpdateSchedule(cfg.Schedule); err != nil {
+			return fmt.Errorf("failed to update schedule: %w", err)
 		}
-		if err := systemd.ReloadDaemon(); err != nil {
-			return fmt.Errorf("failed to reload systemd: %w", err)
-		}
-		if err := systemd.RestartTimer(); err != nil {
-			return fmt.Errorf("failed to restart timer: %w", err)
-		}
-		printer.Info("Timer updated and restarted.")
+		printer.Info("Scheduled task updated.")
 	}
 
 	printer.Success("Configuration updated successfully.")
@@ -630,17 +626,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		printer.Info("  Notify:   %s", cfg.NotifyURL)
 	}
 
-	// Display timer status
-	printer.Header("\n=== Timer Status ===")
-	timerStatus, err := systemd.TimerStatus()
+	// Display scheduler status
+	printer.Header("\n=== Scheduler Status ===")
+	schedStatus, err := sched.Status()
 	if err != nil {
-		printer.Warning("  Timer not installed or not running")
+		printer.Warning("  Scheduled task not installed or not running")
 	} else {
-		fmt.Println(timerStatus)
+		fmt.Println(schedStatus)
 	}
 
 	// Display next run time
-	nextRun, err := systemd.NextRun()
+	nextRun, err := sched.NextRun()
 	if err == nil && strings.TrimSpace(nextRun) != "" {
 		printer.Info("Next scheduled run: %s", strings.TrimSpace(nextRun))
 	}
@@ -773,11 +769,7 @@ func runList(cmd *cobra.Command, args []string) error {
 }
 
 func runLogs(cmd *cobra.Command, args []string) error {
-	execCmd := exec.Command("journalctl", "-u", "backup.service",
-		"--no-pager", "-n", fmt.Sprintf("%d", logsLines))
-	execCmd.Stdout = os.Stdout
-	execCmd.Stderr = os.Stderr
-	return execCmd.Run()
+	return sched.ViewLogs(logsLines)
 }
 
 func runCompletion(cmd *cobra.Command, args []string) error {

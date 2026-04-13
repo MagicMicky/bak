@@ -5,19 +5,9 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
-)
-
-const (
-	// DefaultConfigPath is the default location for the backup configuration
-	DefaultConfigPath = "/etc/backup/backup.conf"
-	// DefaultEnvPath is the default location for the restic environment file
-	DefaultEnvPath = "/etc/backup/env"
-	// DefaultPasswordPath is the default location for the restic password file
-	DefaultPasswordPath = "/etc/backup/restic-password"
-	// DefaultCacheDir is the default location for the restic cache
-	DefaultCacheDir = "/var/cache/restic"
 )
 
 // Config represents the backup configuration
@@ -154,13 +144,19 @@ func (c *Config) RetentionTag() string {
 // It creates the env file and password file with appropriate permissions.
 func WriteCredentials(repo, password string) error {
 	// Ensure parent directory exists
-	if err := os.MkdirAll("/etc/backup", 0755); err != nil {
-		return fmt.Errorf("failed to create /etc/backup directory: %w", err)
+	configDir := filepath.Dir(DefaultEnvPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create %s directory: %w", configDir, err)
 	}
 
 	// Write password file first (mode 0600 for security)
 	if err := os.WriteFile(DefaultPasswordPath, []byte(password+"\n"), 0600); err != nil {
 		return fmt.Errorf("failed to write password file: %w", err)
+	}
+
+	// On Windows, file mode 0600 is not enforced; use platform ACLs
+	if err := restrictPermissions(DefaultPasswordPath); err != nil {
+		return fmt.Errorf("failed to restrict password file permissions: %w", err)
 	}
 
 	// Write env file (mode 0644)
