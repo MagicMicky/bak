@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 
 	"github.com/magicmicky/bak/internal/config"
 )
@@ -80,7 +81,10 @@ func (r *Runner) Run() error {
 	// Add standard options
 	args = append(args, "--exclude-caches")
 	args = append(args, "--exclude-if-present", ".nobackup")
-	args = append(args, "--one-file-system")
+	if runtime.GOOS != "windows" {
+		// --one-file-system is not supported on Windows (no device IDs)
+		args = append(args, "--one-file-system")
+	}
 
 	// Add exclude patterns
 	for _, exclude := range r.Config.Excludes {
