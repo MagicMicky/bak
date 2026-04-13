@@ -42,7 +42,9 @@ func (s *windowsScheduler) Install(schedule string) error {
 
 	cmdArgs := []string{"/Create", "/TN", taskName, "/TR", fmt.Sprintf(`"%s" run-internal`, binaryPath)}
 	cmdArgs = append(cmdArgs, args...)
-	cmdArgs = append(cmdArgs, "/F", "/RL", "HIGHEST")
+	// /F: overwrite existing task, /RL HIGHEST: run with elevated privileges,
+	// /RU SYSTEM: run as SYSTEM so backups execute even when no user is logged in
+	cmdArgs = append(cmdArgs, "/F", "/RL", "HIGHEST", "/RU", "SYSTEM")
 
 	if err := exec.Command("schtasks", cmdArgs...).Run(); err != nil {
 		return fmt.Errorf("failed to create scheduled task: %w", err)
@@ -99,7 +101,7 @@ func (s *windowsScheduler) DryRunInfo(schedule, binaryPath string) []DryRunFile 
 
 	cmdArgs := []string{"schtasks", "/Create", "/TN", taskName, "/TR", fmt.Sprintf(`"%s" run-internal`, binaryPath)}
 	cmdArgs = append(cmdArgs, args...)
-	cmdArgs = append(cmdArgs, "/F", "/RL", "HIGHEST")
+	cmdArgs = append(cmdArgs, "/F", "/RL", "HIGHEST", "/RU", "SYSTEM")
 
 	return []DryRunFile{
 		{
