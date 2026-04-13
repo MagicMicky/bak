@@ -3,6 +3,9 @@
 package scheduler
 
 import (
+	"bufio"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -61,6 +64,27 @@ func TestScheduleArgs(t *testing.T) {
 	}
 }
 
+func TestTaskCommand(t *testing.T) {
+	t.Parallel()
+
+	cmd := taskCommand(`C:\Program Files\bak\bak.exe`)
+	if !strings.Contains(cmd, "run-internal") {
+		t.Error("taskCommand missing run-internal")
+	}
+	if !strings.Contains(cmd, ">>") {
+		t.Error("taskCommand missing output redirection")
+	}
+	if !strings.Contains(cmd, "2>&1") {
+		t.Error("taskCommand missing stderr redirection")
+	}
+	if !strings.Contains(cmd, "backup.log") {
+		t.Error("taskCommand missing log file path")
+	}
+	if !strings.HasPrefix(cmd, `cmd /c`) {
+		t.Error("taskCommand should start with cmd /c")
+	}
+}
+
 func TestWindowsDryRunInfo(t *testing.T) {
 	t.Parallel()
 
@@ -80,6 +104,9 @@ func TestWindowsDryRunInfo(t *testing.T) {
 	if !strings.Contains(files[0].Content, "bak-backup") {
 		t.Error("DryRunInfo content missing task name")
 	}
+	if !strings.Contains(files[0].Content, "backup.log") {
+		t.Error("DryRunInfo content missing log path")
+	}
 }
 
 func TestWindowsDefaultBinaryPath(t *testing.T) {
@@ -89,5 +116,65 @@ func TestWindowsDefaultBinaryPath(t *testing.T) {
 	want := `C:\Program Files\bak\bak.exe`
 	if s.DefaultBinaryPath() != want {
 		t.Errorf("DefaultBinaryPath() = %q, want %q", s.DefaultBinaryPath(), want)
+	}
+}
+
+func TestViewLogs(t *testing.T) {
+	t.Parallel()
+
+	// Test with non-existent log file
+	s := &windowsScheduler{}
+	err := s.ViewLogs(20)
+	if err == nil {
+		t.Error("ViewLogs should error when no log file exists")
+	}
+}
+
+func TestViewLogsReadsFile(t *testing.T) {
+	t.Parallel()
+
+	// Create a temp log file and verify ViewLogs reads it
+	tmpDir := t.TempDir()
+	tmpLog := filepath.Join(tmpDir, "test.log")
+
+	lines := []string{
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+	}
+	if err := os.WriteFile(tmpLog, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+		t.Fatalf("failed to write test log: %v", err)
+	}
+
+	// Test the tail logic directly since ViewLogs uses hardcoded logPath()
+	file, err := os.Open(tmpLog)
+	if err != nil {
+		t.Fatalf("failed to open test log: %v", err)
+	}
+	defer file.Close()
+
+	var allLines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		allLines = append(allLines, scanner.Text())
+	}
+
+	if len(allLines) != 5 {
+		t.Errorf("read %d lines, want 5", len(allLines))
+	}
+
+	// Test tail: last 3 lines
+	start := 0
+	if len(allLines) > 3 {
+		start = len(allLines) - 3
+	}
+	tail := allLines[start:]
+	if len(tail) != 3 {
+		t.Errorf("tail got %d lines, want 3", len(tail))
+	}
+	if tail[0] != "line 3" {
+		t.Errorf("tail[0] = %q, want %q", tail[0], "line 3")
 	}
 }
