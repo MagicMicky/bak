@@ -36,9 +36,11 @@ func logPath() string {
 	return filepath.Join(config.DefaultConfigDir, "backup.log")
 }
 
-// taskCommand returns the /TR value that wraps bak with output redirection.
+// taskCommand returns the /TR value that wraps bak with output redirection
+// and a timestamp header before each run.
 func taskCommand(binaryPath string) string {
-	return fmt.Sprintf(`cmd /c ""%s" run-internal >> "%s" 2>&1"`, binaryPath, logPath())
+	log := logPath()
+	return fmt.Sprintf(`cmd /c "echo === %%DATE%% %%TIME%% === >> "%s" & "%s" run-internal >> "%s" 2>&1"`, log, binaryPath, log)
 }
 
 func (s *windowsScheduler) Install(schedule string) error {
