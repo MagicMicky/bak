@@ -849,7 +849,7 @@ func runDisable(cmd *cobra.Command, args []string) error {
 	if disableDryRun {
 		printer.Header("=== Dry Run Mode ===")
 		printer.Info("")
-		printer.Info("Would remove scheduled backup task")
+		fmt.Println(sched.DryRunUninstallInfo())
 		printer.Info("")
 		printer.Info("Files preserved:")
 		printer.Info("  %s (config)", config.DefaultConfigPath)

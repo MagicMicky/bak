@@ -81,6 +81,10 @@ func (s *windowsScheduler) Uninstall() error {
 	return fmt.Errorf("failed to delete scheduled task: %w: %s", err, strings.TrimSpace(string(out)))
 }
 
+func (s *windowsScheduler) DryRunUninstallInfo() string {
+	return fmt.Sprintf("Would run:\n  schtasks /Delete /TN %s /F", taskName)
+}
+
 func (s *windowsScheduler) UpdateSchedule(schedule string) error {
 	// Install uses /F flag which overwrites the existing task
 	return s.Install(schedule)

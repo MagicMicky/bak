@@ -93,6 +93,15 @@ func (s *systemdScheduler) Uninstall() error {
 	return exec.Command("systemctl", "daemon-reload").Run()
 }
 
+func (s *systemdScheduler) DryRunUninstallInfo() string {
+	return fmt.Sprintf("Would run:\n"+
+		"  systemctl stop backup.timer\n"+
+		"  systemctl disable backup.timer\n"+
+		"  rm %s\n"+
+		"  rm %s\n"+
+		"  systemctl daemon-reload", servicePath, timerPath)
+}
+
 func (s *systemdScheduler) UpdateSchedule(schedule string) error {
 	if err := os.WriteFile(timerPath, []byte(generateTimer(schedule)), 0644); err != nil {
 		return fmt.Errorf("failed to update timer: %w", err)
